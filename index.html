@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Sprint Tracker — Browse Jira sprint tickets, review pull requests, TL comments, AI ratings and generate Excel reports." />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.openai.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:;" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <title>Sprint Tracker — Jira Report Reviewer</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23060d1a'/%3E%3Crect x='4' y='4' width='11' height='11' rx='3' fill='%233b82f6'/%3E%3Crect x='17' y='4' width='11' height='11' rx='3' fill='%23818cf8' opacity='.75'/%3E%3Crect x='4' y='17' width='11' height='11' rx='3' fill='%23818cf8' opacity='.5'/%3E%3Crect x='17' y='17' width='11' height='11' rx='3' fill='%233b82f6' opacity='.35'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Apply saved theme before React renders to prevent flash of wrong theme -->
+    <script>
+      (function(){
+        var t = localStorage.getItem("sprint-tracker-theme") || "dark";
+        var r = t === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : t;
+        document.documentElement.dataset.theme = r;
+        document.documentElement.style.colorScheme = r;
+      })();
+    </script>
+    <style>
+      /* ── Theme tokens ─────────────────────────────────────────── */
+      :root, [data-theme="dark"] {
+        --bg:          #060d1a;
+        --bg-nav:      #080f1e;
+        --bg-surface:  #0a1120;
+        --bg-card:     #0c1526;
+        --bg-elevated: #0f172a;
+        --bg-raised:   #131e33;
+        --border:      #1a2236;
+        --border-sub:  #1e2535;
+        --border-act:  #2a3547;
+        --text:        #e2e8f0;
+        --text-hi:     #f1f5f9;
+        --text-mid:    #cbd5e1;
+        --text-2:      #94a3b8;
+        --text-3:      #64748b;
+        --text-4:      #475569;
+        --text-5:      #334155;
+        color-scheme:  dark;
+      }
+      [data-theme="light"] {
+        --bg:          #f8fafc;
+        --bg-nav:      #ffffff;
+        --bg-surface:  #f1f5f9;
+        --bg-card:     #ffffff;
+        --bg-elevated: #edf2f8;
+        --bg-raised:   #e2e9f3;
+        --border:      #e2e8f0;
+        --border-sub:  #dde4ef;
+        --border-act:  #c8d4e8;
+        --text:        #1e293b;
+        --text-hi:     #0f172a;
+        --text-mid:    #334155;
+        --text-2:      #475569;
+        --text-3:      #64748b;
+        --text-4:      #94a3b8;
+        --text-5:      #cbd5e1;
+        color-scheme:  light;
+      }
+      /* ── Base styles ──────────────────────────────────────────── */
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      body { background: var(--bg); color: var(--text); }
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: var(--bg-surface); }
+      ::-webkit-scrollbar-thumb { background: var(--border-sub); border-radius: 3px; }
+      @keyframes shimmer {
+        0%, 100% { opacity: 0.45; }
+        50%      { opacity: 1; }
+      }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+      select option { background: var(--bg-surface); color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
