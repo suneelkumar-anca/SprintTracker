@@ -10,10 +10,11 @@ import {
   isJiraConfigured,
 } from "./jira.js";
 import { exportToExcel } from "./excel.js";
-import { loadSavedReports, saveReport, deleteReport } from "./storage.js";
+import { loadSavedReports, saveReport, deleteReport, reorderReports } from "./storage.js";
 
 /*  THEME MANAGEMENT  */
-const THEME_KEY = "sprint-tracker-theme";
+const THEME_KEY      = "sprint-tracker-theme";
+const ENV_BOARD_ID   = import.meta.env.VITE_JIRA_BOARD_ID ?? "";
 function getSystemTheme() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
@@ -566,11 +567,11 @@ function TicketCard({ ticket, prs, prsLoading, comments, commentsLoading }) {
         )}
       </Section>
 
-      {/* Artifacts � derived from live PR data */}
+      {/* Artifacts — derived from live PR data */}
       <Section label="Artifacts" icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
 
-          {/* PR presence badge � derived from fetched PR list */}
+          {/* PR presence badge — derived from fetched PR list */}
           {prsLoading ? (
             <Skeleton w={100} h={32} radius={8} />
           ) : (
@@ -632,7 +633,7 @@ function TicketCard({ ticket, prs, prsLoading, comments, commentsLoading }) {
         </div>
       </Section>
 
-      {/* TL Comments � Jira comments + inline add form */}
+      {/* TL Comments — Jira comments + inline add form */}
       <Section label="Comments" icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>}>
         <CommentsSection
           tlComment={ticket.tlComment}
@@ -669,7 +670,7 @@ function TicketCard({ ticket, prs, prsLoading, comments, commentsLoading }) {
   );
 }
 
-/*  TICKET ROW � compact 2-line card  */
+/*  TICKET ROW — compact 2-line card  */
 function TicketRow({ ticket, onSelect, isActive }) {
   const [hov, setHov] = useState(false);
   const cfg = statusCfg(ticket.status);
@@ -691,7 +692,7 @@ function TicketRow({ ticket, onSelect, isActive }) {
         borderLeft: `3px solid ${isActive ? "#3b82f6" : cfg.color + "60"}`,
         transition: "background .12s",
       }}>
-      {/* Row 1: ID � status pill � avatar � SP */}
+      {/* Row 1: ID · status pill · avatar · SP */}
       <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11,
           color: isActive ? "#60a5fa" : "#3b82f6", fontWeight: 700, flexShrink: 0 }}>
@@ -985,7 +986,7 @@ function DashboardView({ sprintTickets, sprintLoaded, sprintLoading, currentSpri
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>
                     {p.tickets.length} ticket{p.tickets.length !== 1 ? "s" : ""}
-                    {p.totalSP > 0 ? ` � ${p.totalSP} SP` : ""}
+                    {p.totalSP > 0 ? ` · ${p.totalSP} SP` : ""}
                   </div>
                 </div>
                 {/* Completion % badge */}
@@ -1092,8 +1093,196 @@ function DashboardView({ sprintTickets, sprintLoaded, sprintLoading, currentSpri
 }
 
 /*  MAIN APP  */
+/*  SAVED REPORTS VIEW  */
+function SavedReportsView({ savedReports, onLoad, onDelete, onExport, onReorder }) {
+  const [dragIdx, setDragIdx] = React.useState(null);
+  const [overIdx, setOverIdx] = React.useState(null);
+
+  const handleDragStart = (e, idx) => {
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (idx !== dragIdx) setOverIdx(idx);
+  };
+
+  const handleDrop = (e, idx) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === idx) return;
+    const reordered = [...savedReports];
+    const [moved] = reordered.splice(dragIdx, 1);
+    reordered.splice(idx, 0, moved);
+    onReorder(reordered);
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-hi)", margin: "0 0 4px", letterSpacing: "-0.4px" }}>Saved Reports</h2>
+          <p style={{ fontSize: 13, color: "var(--text-4)", margin: 0 }}>
+            {savedReports.length === 0 ? "No saved reports yet." : `${savedReports.length} saved sprint snapshot${savedReports.length !== 1 ? "s" : ""}${savedReports.length > 1 ? " \u00b7 drag cards to reorder" : ""}`}
+          </p>
+        </div>
+      </div>
+
+      {savedReports.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "80px 24px",
+          background: "var(--bg-surface)", border: "1px solid var(--border)",
+          borderRadius: 16 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 14,
+            background: "var(--bg-elevated)", border: "1px solid var(--border-sub)",
+            display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-5)" strokeWidth="1.5">
+              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+          </div>
+          <p style={{ fontSize: 14, color: "var(--text-4)", margin: "0 0 6px" }}>No saved reports yet.</p>
+          <p style={{ fontSize: 12, color: "var(--text-5)", margin: 0 }}>Load a sprint and click &ldquo;&#x2193; Save&rdquo; to snapshot it here.</p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+          {savedReports.map((r, idx) => {
+            const ticketCount = r.tickets?.length ?? 0;
+            const doneCount   = (r.tickets ?? []).filter(t => (t.status ?? "").toLowerCase() === "done").length;
+            const totalSP     = (r.tickets ?? []).reduce((s, t) => s + (Number.isFinite(t.sp) ? t.sp : 0), 0);
+            const pct         = ticketCount > 0 ? Math.round((doneCount / ticketCount) * 100) : 0;
+            const isDragging  = dragIdx === idx;
+            const isOver      = overIdx === idx && dragIdx !== null && dragIdx !== idx;
+            return (
+              <div
+                key={r.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, idx)}
+                onDragOver={(e) => handleDragOver(e, idx)}
+                onDrop={(e) => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
+                style={{
+                  background: "var(--bg-surface)",
+                  border: isOver ? "2px solid #3b82f6" : "1px solid var(--border)",
+                  borderRadius: 14, padding: isOver ? "19px 21px" : "20px 22px",
+                  display: "flex", flexDirection: "column", gap: 14,
+                  opacity: isDragging ? 0.35 : 1,
+                  cursor: "grab",
+                  transition: "opacity .15s, border-color .15s, box-shadow .15s",
+                  boxShadow: isOver ? "0 0 0 3px rgba(59,130,246,0.15)" : "none",
+                  userSelect: "none",
+                }}
+              >
+                {/* Drag handle + title */}
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  {/* Grip icon */}
+                  <div style={{ flexShrink: 0, marginTop: 2, color: "var(--text-5)", cursor: "grab" }}>
+                    <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+                      <circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/>
+                      <circle cx="3" cy="8" r="1.5"/><circle cx="9" cy="8" r="1.5"/>
+                      <circle cx="3" cy="13" r="1.5"/><circle cx="9" cy="13" r="1.5"/>
+                    </svg>
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-hi)",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      marginBottom: 4 }}>{r.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-4)" }}>
+                      Saved {new Date(r.savedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats row */}
+                <div style={{ display: "flex", gap: 10 }}>
+                  {[
+                    { label: "Tickets",  value: ticketCount,         color: "var(--text)" },
+                    { label: "Done",     value: `${doneCount}/${ticketCount}`, color: "#22c55e" },
+                    { label: "SP",       value: totalSP,             color: "#3b82f6" },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ flex: 1, background: "var(--bg-elevated)",
+                      border: "1px solid var(--border-sub)", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 9, color: "var(--text-4)", textTransform: "uppercase",
+                        letterSpacing: "0.1em", fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color,
+                        fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Progress bar */}
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between",
+                    fontSize: 10, color: "var(--text-4)", marginBottom: 5, fontWeight: 600 }}>
+                    <span>Progress</span><span>{pct}%</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--bg-elevated)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`,
+                      background: pct === 100 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#3b82f6",
+                      borderRadius: 3, transition: "width .6s ease" }} />
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+                  <button onClick={() => onLoad(r)}
+                    style={{ flex: 1, padding: "8px 0", borderRadius: 8, cursor: "pointer", fontWeight: 600,
+                      fontSize: 12, border: "1px solid rgba(59,130,246,0.3)",
+                      background: "rgba(59,130,246,0.08)", color: "#60a5fa",
+                      fontFamily: "Inter, sans-serif", transition: "all .15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background="rgba(59,130,246,0.18)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background="rgba(59,130,246,0.08)"; }}>
+                    Load Report
+                  </button>
+                  <button onClick={() => onExport(r)}
+                    title="Export to Excel"
+                    style={{ padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontWeight: 600,
+                      fontSize: 12, border: "1px solid rgba(34,197,94,0.3)",
+                      background: "rgba(34,197,94,0.08)", color: "#22c55e",
+                      fontFamily: "Inter, sans-serif", transition: "all .15s",
+                      display: "flex", alignItems: "center", gap: 5 }}
+                    onMouseEnter={e => { e.currentTarget.style.background="rgba(34,197,94,0.18)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background="rgba(34,197,94,0.08)"; }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Excel
+                  </button>
+                  <button onClick={() => onDelete(r.id)}
+                    title="Delete report"
+                    style={{ padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                      fontSize: 12, border: "1px solid rgba(239,68,68,0.3)",
+                      background: "rgba(239,68,68,0.08)", color: "#ef4444",
+                      display: "flex", alignItems: "center", transition: "all .15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background="rgba(239,68,68,0.18)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background="rgba(239,68,68,0.08)"; }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                      <path d="M10 11v6M14 11v6"/>
+                      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
-  const [activeView,         setActiveView]         = useState("tracker"); // "tracker" | "dashboard"
+  const [activeView,         setActiveView]         = useState("saved"); // "saved" | "tracker" | "dashboard"
   const [query,              setQuery]              = useState("");
   const [ticket,             setTicket]             = useState(null);
   const [prs,                setPrs]                = useState([]);
@@ -1111,9 +1300,7 @@ export default function App() {
   // Sprint management
   const [boards,             setBoards]             = useState([]);
   const [boardsLoading,      setBoardsLoading]      = useState(false);
-  const [selectedBoardId,    setSelectedBoardId]    = useState(
-    import.meta.env.VITE_JIRA_BOARD_ID ?? ""
-  );
+  const [selectedBoardId,    setSelectedBoardId]    = useState(ENV_BOARD_ID);
   const [selectedBoardType,  setSelectedBoardType]  = useState("scrum"); // "scrum" | "kanban"
   const [boardSprints,       setBoardSprints]       = useState([]);
   const [sprintsLoading,     setSprintsLoading]     = useState(false);
@@ -1126,8 +1313,9 @@ export default function App() {
   const [filterEnd,          setFilterEnd]          = useState("");
 
   // Saved reports
-  const [savedReports,       setSavedReports]       = useState([]);
-  const [showSaved,          setShowSaved]          = useState(false);
+  const [savedReports,       setSavedReports]       = useState(() => loadSavedReports());
+  const [showSaved,          setShowSaved]          = useState(false); // eslint-disable-line no-unused-vars
+  const [saveFeedback,       setSaveFeedback]       = useState(null);  // null | "saved" | "already saved"
 
   const configured = isJiraConfigured();
   const [themePref, setThemePref] = useThemePref();
@@ -1167,7 +1355,7 @@ export default function App() {
     setSelectedBoardType(bType);
 
     if (bType === "kanban") {
-      // Kanban boards have no sprints � clear sprint state and load tickets directly
+      // Kanban boards have no sprints — clear sprint state and load tickets directly
       setBoardSprints([]);
       setSelectedSprintId("");
       setTicket(null); setPrs([]); setComments([]);
@@ -1182,7 +1370,7 @@ export default function App() {
         .catch((err) => { setSprintError(err?.message ?? "Failed to load board tickets."); setSprintLoaded(true); })
         .finally(() => setSprintLoading(false));
     } else {
-      // Scrum board � fetch sprints and auto-select the active one
+      // Scrum board — fetch sprints and auto-select the active one
       setSprintsLoading(true);
       setBoardSprints([]);
       fetchBoardSprints(selectedBoardId)
@@ -1195,13 +1383,8 @@ export default function App() {
     }
   }, [configured, selectedBoardId, boards]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load saved reports from localStorage on mount
-  useEffect(() => {
-    setSavedReports(loadSavedReports());
-  }, []);
-
   // Reload sprint tickets whenever selectedSprintId changes.
-  // Only fires when a sprint is explicitly selected � avoids spurious API calls.
+  // Only fires when a sprint is explicitly selected — avoids spurious API calls.
   useEffect(() => {
     if (!configured || !selectedSprintId) return;
     // Clear stale ticket detail from a previous sprint
@@ -1264,9 +1447,15 @@ export default function App() {
   }, [pendingLookup, activeView, lookup]);
 
   /* Post a comment and refresh the comment list */
-  // Commenting disabled � read-only view only.
+  // Commenting disabled — read-only view only.
 
   const clearAll = () => { setQuery(""); setTicket(null); setPrs([]); setError(""); setComments([]); };
+
+  // True whenever the current board+sprint is already in the saved list
+  const isAlreadySaved = savedReports.some(
+    (r) => selectedSprintId && r.sprintId === selectedSprintId &&
+            selectedBoardId  && r.boardId  === selectedBoardId
+  );
 
   // Derived filter options
   const uniqueAssignees = useMemo(() =>
@@ -1293,21 +1482,40 @@ export default function App() {
   // Save current sprint to localStorage
   const saveCurrentSprint = () => {
     if (!sprintLoaded || sprintTickets.length === 0) return;
-    const sprintName = sprintTickets[0]?.sprintName ?? `Sprint ${selectedSprintId || "Active"}`;
+    const sprintName =
+      boardSprints.find((s) => String(s.id) === String(selectedSprintId))?.name
+      ?? sprintTickets[0]?.sprintName
+      ?? `Sprint ${selectedSprintId || "Active"}`;
+    // Duplicate = same board AND same sprint (same board + different sprint is allowed)
+    const existing = savedReports.find(
+      (r) => selectedSprintId && r.sprintId === selectedSprintId &&
+             selectedBoardId  && r.boardId  === selectedBoardId
+    );
+    if (existing) {
+      setSaveFeedback("already saved");
+      setTimeout(() => setSaveFeedback(null), 2000);
+      return;
+    }
     const report = {
       id: `${Date.now()}`,
       name: sprintName,
+      boardId:  selectedBoardId,
       sprintId: selectedSprintId,
       savedAt: new Date().toISOString(),
       tickets: sprintTickets,
     };
     saveReport(report);
     setSavedReports(loadSavedReports());
+    setSaveFeedback("saved");
+    setTimeout(() => setSaveFeedback(null), 2000);
   };
 
   // Export current (filtered) sprint to Excel
   const exportCurrentSprint = () => {
-    const sprintName = sprintTickets[0]?.sprintName ?? `Sprint_${selectedSprintId || "Active"}`;
+    const sprintName =
+      boardSprints.find((s) => String(s.id) === String(selectedSprintId))?.name
+      ?? sprintTickets[0]?.sprintName
+      ?? `Sprint_${selectedSprintId || "Active"}`;
     exportToExcel(filteredTickets, sprintName);
   };
 
@@ -1333,8 +1541,9 @@ export default function App() {
   const doneCount    = sprintTickets.filter(t => t.status?.toLowerCase() === "done").length;
   const totalSP      = sprintTickets.reduce((s, t) => s + (Number.isFinite(t.sp) ? t.sp : 0), 0);
   const doneSP       = sprintTickets.filter(t => t.status?.toLowerCase() === "done").reduce((s, t) => s + (Number.isFinite(t.sp) ? t.sp : 0), 0);
-  const currentSprintName = sprintTickets[0]?.sprintName
-    ?? boardSprints.find((s) => String(s.id) === String(selectedSprintId))?.name
+  const currentSprintName =
+    boardSprints.find((s) => String(s.id) === String(selectedSprintId))?.name
+    ?? sprintTickets[0]?.sprintName
     ?? "Active";
 
   return (
@@ -1381,7 +1590,7 @@ export default function App() {
               {configured ? "Jira connected" : "Jira not configured"}
             </div>
 
-            {/* Theme toggle � Light / Dark / System */}
+            {/* Theme toggle — Light / Dark / System */}
             <div style={{ display: "flex", alignItems: "center", gap: 1,
               background: "var(--bg-elevated)", border: "1px solid var(--border)",
               borderRadius: 8, padding: 3 }}>
@@ -1404,31 +1613,31 @@ export default function App() {
               ))}
             </div>
 
-            {/* View tabs � only show when sprint is loaded */}
-            {sprintLoaded && totalTickets > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 2,
-                background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
-                {[
-                  { id: "tracker",   label: "Tracker",   icon: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
-                  { id: "dashboard", label: "Dashboard", icon: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" },
-                ].map(({ id, label, icon }) => (
-                  <button key={id} onClick={() => setActiveView(id)}
-                    style={{ display: "flex", alignItems: "center", gap: 5,
-                      padding: "5px 12px", borderRadius: 6, border: "none", cursor: "pointer",
-                      fontSize: 12, fontWeight: 600, fontFamily: "Inter, sans-serif",
-                      background: activeView === id ? "var(--bg-elevated)" : "transparent",
-                      color: activeView === id ? "var(--text-hi)" : "var(--text-4)",
-                      boxShadow: activeView === id ? "0 1px 4px rgba(0,0,0,0.4)" : "none",
-                      transition: "all .15s" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d={icon}/>
-                    </svg>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* View tabs — always visible */}
+            <div style={{ display: "flex", alignItems: "center", gap: 2,
+              background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: 3 }}>
+              {[
+                { id: "saved",     label: savedReports.length > 0 ? `Saved (${savedReports.length})` : "Saved",
+                  icon: "M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2zM17 21V13H7v8M7 3v5h8" },
+                { id: "tracker",   label: "Tracker",   icon: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
+                { id: "dashboard", label: "Dashboard", icon: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" },
+              ].map(({ id, label, icon }) => (
+                <button key={id} onClick={() => setActiveView(id)}
+                  style={{ display: "flex", alignItems: "center", gap: 5,
+                    padding: "5px 12px", borderRadius: 6, border: "none", cursor: "pointer",
+                    fontSize: 12, fontWeight: 600, fontFamily: "Inter, sans-serif",
+                    background: activeView === id ? "var(--bg-elevated)" : "transparent",
+                    color: activeView === id ? "var(--text-hi)" : "var(--text-4)",
+                    boxShadow: activeView === id ? "0 1px 4px rgba(0,0,0,0.4)" : "none",
+                    transition: "all .15s" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={icon}/>
+                  </svg>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
@@ -1438,7 +1647,7 @@ export default function App() {
 
         {!configured && <SetupBanner />}
 
-        {/* Summary stat cards � always visible when sprint loaded */}
+        {/* Summary stat cards — always visible when sprint loaded */}
         {sprintLoaded && totalTickets > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 32 }}>
             {[
@@ -1456,6 +1665,17 @@ export default function App() {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Saved reports view */}
+        {activeView === "saved" && (
+          <SavedReportsView
+            savedReports={savedReports}
+            onLoad={(r) => { loadSavedReport(r); setActiveView("tracker"); }}
+            onDelete={removeSavedReport}
+            onExport={(r) => exportToExcel(r.tickets, r.name)}
+            onReorder={(newOrder) => { reorderReports(newOrder); setSavedReports(newOrder); }}
+          />
         )}
 
         {/* Dashboard view */}
@@ -1613,26 +1833,21 @@ export default function App() {
                       <path d="M21 12a9 9 0 01-9 9 9 9 0 01-6.36-2.64L3 15M3 21v-6h6"/>
                     </svg>
                   </button>
-                  {/* Saved Reports toggle */}
-                  <button onClick={() => setShowSaved((v) => !v)}
-                    title="Saved Reports"
-                    style={{ background: showSaved ? "rgba(129,140,248,0.15)" : "transparent",
-                      border: "1px solid " + (showSaved ? "#818cf8" : "var(--border-sub)"),
-                      borderRadius: 6, padding: "4px 8px", cursor: "pointer",
-                      color: showSaved ? "#818cf8" : "var(--text-4)", fontSize: 11, fontWeight: 600 }}>
-                    {savedReports.length > 0 ? `☰ ${savedReports.length}` : "☰"}
-                  </button>
-                  {/* Save button */}
+                  {/* Saved Reports toggle — removed, now a dedicated tab */}
                   {sprintLoaded && sprintTickets.length > 0 && (
                     <button onClick={saveCurrentSprint}
-                      title="Save current sprint report"
-                      style={{ background: "transparent", border: "1px solid var(--border-sub)",
-                        borderRadius: 6, padding: "4px 8px", cursor: "pointer",
-                        color: "var(--text-4)", fontSize: 11, fontWeight: 600,
-                        transition: "border-color .15s, color .15s" }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor="#22c55e"; e.currentTarget.style.color="#22c55e"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor="var(--border-sub)"; e.currentTarget.style.color="var(--text-4)"; }}>
-                      ↓ Save
+                      title={isAlreadySaved ? "Already saved" : "Save current sprint report"}
+                      style={{
+                        background: isAlreadySaved ? "rgba(129,140,248,0.12)" : saveFeedback === "saved" ? "rgba(34,197,94,0.12)" : "transparent",
+                        border: "1px solid " + (isAlreadySaved ? "#818cf8" : saveFeedback === "saved" ? "#22c55e" : "var(--border-sub)"),
+                        borderRadius: 6, padding: "4px 8px", cursor: isAlreadySaved ? "default" : "pointer",
+                        color: isAlreadySaved ? "#818cf8" : saveFeedback === "saved" ? "#22c55e" : "var(--text-4)",
+                        fontSize: 11, fontWeight: 600,
+                        transition: "all .2s"
+                      }}
+                      onMouseEnter={e => { if (!isAlreadySaved && !saveFeedback) { e.currentTarget.style.borderColor="#22c55e"; e.currentTarget.style.color="#22c55e"; } }}
+                      onMouseLeave={e => { if (!isAlreadySaved && !saveFeedback) { e.currentTarget.style.borderColor="var(--border-sub)"; e.currentTarget.style.color="var(--text-4)"; } }}>
+                      {isAlreadySaved ? "✓ Saved" : saveFeedback === "saved" ? "✓ Saved" : "↓ Save"}
                     </button>
                   )}
                   {/* Export button */}
@@ -1674,7 +1889,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Sprint selector � scrum boards only */}
+              {/* Sprint selector — scrum boards only */}
               {selectedBoardId && selectedBoardType !== "kanban" && (
                 <div style={{ marginBottom: 8 }}>
                   <Combobox
@@ -1696,7 +1911,7 @@ export default function App() {
                   />
                 </div>
               )}
-              {/* Kanban notice � no sprint needed, tickets load automatically */}
+              {/* Kanban notice — no sprint needed, tickets load automatically */}
               {selectedBoardId && selectedBoardType === "kanban" && (
                 <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 7,
                   background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)",
@@ -1810,54 +2025,7 @@ export default function App() {
               })()}
             </div>
 
-            {/* Saved reports panel */}
-            {showSaved && (
-              <div style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--border)",
-                padding: "10px 14px", maxHeight: 220, overflowY: "auto", flexShrink: 0 }}>
-                {savedReports.length === 0 ? (
-                  <p style={{ fontSize: 12, color: "var(--text-3)", margin: 0 }}>No saved reports yet. Click &#x2193; Save to store a sprint snapshot.</p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {savedReports.map((r) => (
-                      <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8,
-                        background: "var(--bg-surface)", border: "1px solid var(--border)",
-                        borderRadius: 8, padding: "8px 10px" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 500,
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {r.name}
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 1 }}>
-                            {r.tickets?.length ?? 0} tickets \u00b7 {new Date(r.savedAt).toLocaleDateString("en-GB")}
-                          </div>
-                        </div>
-                        <button onClick={() => exportToExcel(r.tickets, r.name)}
-                          title="Export to Excel"
-                          style={{ background: "transparent", border: "1px solid var(--border-sub)",
-                            borderRadius: 5, padding: "3px 7px", cursor: "pointer",
-                            color: "#22c55e", fontSize: 10, fontWeight: 600 }}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        </button>
-                        <button onClick={() => loadSavedReport(r)}
-                          title="Load into sprint panel"
-                          style={{ background: "transparent", border: "1px solid var(--border-sub)",
-                            borderRadius: 5, padding: "3px 7px", cursor: "pointer",
-                            color: "#3b82f6", fontSize: 10, fontWeight: 600 }}>
-                          Load
-                        </button>
-                        <button onClick={() => removeSavedReport(r.id)}
-                          title="Delete report"
-                          style={{ background: "transparent", border: "1px solid var(--border-sub)",
-                            borderRadius: 5, padding: "3px 7px", cursor: "pointer",
-                            color: "#ef4444", fontSize: 10, fontWeight: 600 }}>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Saved reports panel — removed, now a dedicated view tab */}
 
             {/* Sprint fetch error */}
             {sprintError && (
