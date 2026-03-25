@@ -12,10 +12,15 @@ export function loadSavedReports() {
   }
 }
 
-/** Upsert a report (matched by id). Keeps most recent 20 reports. */
+/** Upsert a report (matched by id, or by boardId+sprintId pair). Keeps most recent 20 reports. */
 export function saveReport(report) {
   const all = loadSavedReports();
-  const idx = all.findIndex((r) => r.id === report.id);
+  // Deduplicate: same board + same sprint should overwrite rather than duplicate
+  const idx = all.findIndex(
+    (r) => r.id === report.id ||
+           (report.sprintId && r.sprintId === report.sprintId &&
+            report.boardId  && r.boardId  === report.boardId)
+  );
   if (idx >= 0) {
     all[idx] = report;
   } else {
@@ -27,4 +32,8 @@ export function saveReport(report) {
 export function deleteReport(id) {
   const filtered = loadSavedReports().filter((r) => r.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+}
+
+export function reorderReports(newOrder) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(newOrder.slice(0, 20)));
 }

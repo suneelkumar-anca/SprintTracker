@@ -68,17 +68,16 @@ function safeNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-// Format seconds (Jira timespent) → "2d 1h" using Jira's 8h working day
+// Format seconds → "2073h 1m" (raw hours + minutes, matching Tempo's display)
 function fmtTimeSpent(seconds) {
   if (!seconds || seconds <= 0) return "";
-  const HOURS_PER_DAY = 8;
-  const totalHours = Math.floor(seconds / 3600);
-  const days = Math.floor(totalHours / HOURS_PER_DAY);
-  const hours = totalHours % HOURS_PER_DAY;
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   const parts = [];
-  if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
-  return parts.length ? parts.join(" ") : "< 1h";
+  if (minutes > 0) parts.push(`${minutes}m`);
+  return parts.length ? parts.join(" ") : "< 1m";
 }
 
 function authHeader() {
@@ -182,7 +181,9 @@ function mapIssue(raw) {
     updated:       f.updated?.slice(0, 10) ?? null,
     numericId:     raw.id ?? null,   // numeric ID needed for dev-status API
     jiraUrl: `${import.meta.env.VITE_JIRA_BASE_URL ?? ""}/browse/${raw.key}`,
-    timeSpent:     fmtTimeSpent(f.timespent ?? null),
+    // aggregatetimespent sums time on this issue + all child issues (epics, stories with subtasks)
+    // Falls back to timespent (direct logs only) when aggregate is unavailable
+    timeSpent:     fmtTimeSpent(f.aggregatetimespent ?? f.timespent ?? null),
   };
 }
 
@@ -211,7 +212,7 @@ export async function fetchTicket(key) {
     "priority", "issuetype", "labels", "components",
     ...spFields,
     "customfield_10020",  // sprint
-    "duedate", "created", "updated", "timespent",
+    "duedate", "created", "updated", "timespent", "aggregatetimespent",
     FIELD_TL_COMMENT, FIELD_REVIEW_RATING, FIELD_ARTIFACTS,
   ].join(",");
 
@@ -328,7 +329,7 @@ export async function fetchSprintTickets(sprintIdOverride = null) {
     "customfield_10020",  // sprint info
     "priority", "issuetype", "reporter",
     "labels", "components",
-    "duedate", "created", "updated", "timespent",
+    "duedate", "created", "updated", "timespent", "aggregatetimespent",
     FIELD_TL_COMMENT, FIELD_REVIEW_RATING, FIELD_ARTIFACTS,
   ].join(",");
 
@@ -408,7 +409,7 @@ export async function fetchKanbanTickets(boardId) {
     "customfield_10020",
     "priority", "issuetype", "reporter",
     "labels", "components",
-    "duedate", "created", "updated", "timespent",
+    "duedate", "created", "updated", "timespent", "aggregatetimespent",
     FIELD_TL_COMMENT, FIELD_REVIEW_RATING, FIELD_ARTIFACTS,
   ].join(",");
 
