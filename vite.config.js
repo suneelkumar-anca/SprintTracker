@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
         util: "util",
       },
     },
+    test: { environment: "jsdom", globals: true },
     optimizeDeps: optimizeDepsConfig,
     preview: previewConfig,
     server: {
