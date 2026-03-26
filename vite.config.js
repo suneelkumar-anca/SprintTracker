@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "path";
+import { buildConfig, optimizeDepsConfig, previewConfig } from "./vite.build.js";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -8,9 +8,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: buildConfig,
     define: {
       global: "globalThis",
-      "process.env": "{}",
+      "process.env": JSON.stringify({ NODE_ENV: mode }),
       "process.version": '"v18.0.0"',
       "process.browser": "true",
     },
@@ -22,25 +23,10 @@ export default defineConfig(({ mode }) => {
         util: "util",
       },
     },
-    optimizeDeps: {
-      include: ["buffer", "stream-browserify", "events", "util"],
-      esbuildOptions: {
-        plugins: [
-          {
-            name: "node-browser-polyfills",
-            setup(build) {
-              build.onResolve({ filter: /^util$/ }, () => ({
-                path: path.resolve("node_modules/util/util.js"),
-              }));
-              build.onResolve({ filter: /^events$/ }, () => ({
-                path: path.resolve("node_modules/events/events.js"),
-              }));
-            },
-          },
-        ],
-      },
-    },
+    optimizeDeps: optimizeDepsConfig,
+    preview: previewConfig,
     server: {
+      warmup: { clientFiles: ["./src/**/*.{js,jsx}"] },
       proxy: jiraBase
         ? {
             "/jira-api": {
