@@ -4,6 +4,9 @@ on:
   push:
     branches: [release/1.0]
 
+permissions:
+  contents: write
+
 jobs:
   sync-to-master:
     runs-on: ubuntu-latest
