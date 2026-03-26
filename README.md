@@ -1,6 +1,8 @@
 # Sprint Tracker — Report Reviewer
 
-A React + Vite web app that connects to Jira Cloud to view sprint and kanban board data, review individual tickets, and export reports to Excel.
+A React + Vite web app that connects to Jira Cloud to view sprint and kanban board data, review individual tickets, and export reports to Excel with having best performance.
+
+<img width="842" height="280" alt="image" src="https://github.com/user-attachments/assets/98628689-c049-40d6-b777-02f2ca93e45c" />
 
 ## Prerequisites
 
