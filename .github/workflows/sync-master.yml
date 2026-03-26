@@ -1,0 +1,24 @@
+name: Sync release/1.0 → master
+
+on:
+  push:
+    branches: [release/1.0]
+
+jobs:
+  sync-to-master:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge release/1.0 into master
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout master
+          git merge origin/release/1.0 --no-edit
+          git push origin master
