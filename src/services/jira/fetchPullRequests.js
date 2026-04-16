@@ -2,12 +2,24 @@ import { jiraGet } from "./jiraClient.js";
 
 const APP_TYPES = ["stash", "bitbucket", "github", "github-enterprise", "gitlab"];
 
+function withTimeout(promise, timeoutMs = 5000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+}
+
 export async function fetchPullRequests(numericId) {
   if (!numericId) return [];
   const requests = APP_TYPES.map((app) => ({
     app,
-    promise: jiraGet(
-      `/rest/dev-status/1.0/issue/detail?issueId=${numericId}&applicationType=${app}&dataType=pullrequest`
+    promise: withTimeout(
+      jiraGet(
+        `/rest/dev-status/1.0/issue/detail?issueId=${numericId}&applicationType=${app}&dataType=pullrequest`
+      ),
+      5000
     ),
   }));
 
@@ -16,7 +28,12 @@ export async function fetchPullRequests(numericId) {
   const allPRs = [];
 
   settled.forEach((result, i) => {
-    if (result.status !== "fulfilled") return;
+    if (result.status !== "fulfilled") {
+      if (result.reason) {
+        console.debug(`PR fetch for ${requests[i].app} skipped:`, result.reason.message);
+      }
+      return;
+    }
     const prs = result.value?.detail?.[0]?.pullRequests ?? [];
     prs.forEach((pr) => {
       const key = pr.url ?? pr.id;

@@ -16,6 +16,19 @@ export function useAppHandlers(state) {
     [filters.filteredTickets, currentSprintName]
   );
 
+  const handlePublishConfluence = useCallback(
+    async (report) => {
+      const { publishSprintPage } = await import("../services/confluence/index.js");
+      const result = await publishSprintPage(report.tickets, report.name);
+      if (result.success) {
+        alert(`✓ ${result.message}\n\n${result.pageUrl}`);
+      } else {
+        alert(`✗ Failed to publish: ${result.error}`);
+      }
+    },
+    []
+  );
+
   const handleLoadSnapshot = useCallback((r) => {
     skipAutoSelectRef.current = true;
     setSelectedBoardId(r.boardId ?? selectedBoardId);
@@ -45,5 +58,5 @@ export function useAppHandlers(state) {
     state.sprintTickets.length, lookup.ticket?.id, handleSelectTicket, saved.isAlreadySaved, saved.saveFeedback, saved.saveCurrentSprint, handleExport, refreshBoards,
   ]);
 
-  return { handleSelectTicket, handleExport, handleLoadSnapshot, sprintPanelProps };
+  return { handleSelectTicket, handleExport, handlePublishConfluence, handleLoadSnapshot, sprintPanelProps };
 }

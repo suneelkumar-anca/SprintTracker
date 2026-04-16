@@ -1,7 +1,7 @@
 import { fmtFull } from "../../utils/dateUtils.js";
 import SavedReportActions from "./SavedReportActions.jsx";
 
-export default function SavedReportCard({ report, idx, total, onLoad, onDelete, onExport, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isOver }) {
+export default function SavedReportCard({ report, idx, total, onLoad, onDelete, onExport, onPublishConfluence, onMoveUp, onMoveDown, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isOver }) {
   const ticketCount = report.tickets?.length ?? 0;
   const doneCount   = (report.tickets ?? []).filter(t => (t.status ?? "").toLowerCase() === "done").length;
   const totalSP     = (report.tickets ?? []).reduce((s, t) => s + (Number.isFinite(t.sp) ? t.sp : 0), 0);
@@ -35,7 +35,7 @@ export default function SavedReportCard({ report, idx, total, onLoad, onDelete, 
           <div style={{ height: "100%", width: `${pct}%`, background: pct === 100 ? "var(--color-success)" : pct >= 50 ? "var(--color-warning)" : "var(--color-info)", borderRadius: 3, transition: "width .6s ease" }} />
         </div>
       </div>
-      <SavedReportActions report={report} onLoad={onLoad} onExport={onExport} onDelete={onDelete} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
+      <SavedReportActions report={report} onLoad={onLoad} onExport={onExport} onDelete={onDelete} onPublishConfluence={onPublishConfluence} onMoveUp={onMoveUp} onMoveDown={onMoveDown} />
     </div>
   );
 }

@@ -163,13 +163,47 @@ VITE_JIRA_FIELD_STORY_POINTS=customfield_10016
 1. Go to [atlassian.com](https://atlassian.com) → Account Settings → Security → API tokens.
 2. Create a new token and paste it as `VITE_JIRA_API_TOKEN`.
 
+### 2b. (Optional) Configure Confluence Integration
+
+To enable publishing sprint reports to Confluence wiki pages, add these environment variables to `.env`:
+
+```env
+# Confluence Cloud (OPTIONAL)
+VITE_CONFLUENCE_BASE_URL=https://yourcompany.atlassian.net
+VITE_CONFLUENCE_EMAIL=you@example.com
+VITE_CONFLUENCE_API_TOKEN=your_api_token_here
+VITE_CONFLUENCE_SPACE_KEY=YOUR_SPACE_KEY
+
+# Optional: Parent page ID
+VITE_CONFLUENCE_PARENT_PAGE_ID=12345
+```
+
+**Configuration Details:**
+
+| Variable | Required? | Where to Find |
+|----------|-----------|---------------|
+| `VITE_CONFLUENCE_BASE_URL` | Yes | Your Confluence domain without trailing slash |
+| `VITE_CONFLUENCE_EMAIL` | Yes | Your Atlassian account email (same as Jira) |
+| `VITE_CONFLUENCE_API_TOKEN` | Yes | Same API token as Jira ([generate here](https://id.atlassian.com/manage-profile/security/api-tokens)) |
+| `VITE_CONFLUENCE_SPACE_KEY` | Yes | Found in Confluence space URL: `/spaces/{SPACE_KEY}` |
+| `VITE_CONFLUENCE_PARENT_PAGE_ID` | No | If set, sprint pages created under this page; otherwise auto-creates "Sprint Reports" parent |
+
+**After configuring Confluence:**
+
+- A **"Confluence"** button appears on each saved report card.
+- Click **"Confluence"** to publish the sprint data as a wiki page with formatted table.
+- Page title format: `{sprint name} - report - {YYYY-MM-DD}`
+- Pages are organized under a "Sprint Reports" parent page (auto-created or specified).
+
 ### 3. Start the development server
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. The dev server proxies all `/jira-api/*` requests to your Jira instance to avoid CORS issues.
+Open `http://localhost:5173` in your browser. The dev server proxies:
+- `/jira-api/*` → your Jira instance (to avoid CORS issues)
+- `/confluence-api/*` → your Confluence instance (if configured; bypasses CSP)
 
 > If Jira is not yet configured, a setup banner will guide you through the required environment variables.
 

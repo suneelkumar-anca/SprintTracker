@@ -5,6 +5,7 @@ import { buildConfig, optimizeDepsConfig, previewConfig } from "./vite.build.js"
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const jiraBase = env.VITE_JIRA_BASE_URL ?? "";
+  const confluenceBase = env.VITE_CONFLUENCE_BASE_URL ?? "";
 
   return {
     plugins: [react()],
@@ -28,16 +29,28 @@ export default defineConfig(({ mode }) => {
     preview: previewConfig,
     server: {
       warmup: { clientFiles: ["./src/**/*.{js,jsx}"] },
-      proxy: jiraBase
-        ? {
-            "/jira-api": {
-              target: jiraBase,
-              changeOrigin: true,
-              rewrite: (path) => path.replace(/^\/jira-api/, ""),
-              secure: true,
-            },
-          }
-        : {},
+      proxy: {
+        ...(jiraBase
+          ? {
+              "/jira-api": {
+                target: jiraBase,
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/jira-api/, ""),
+                secure: true,
+              },
+            }
+          : {}),
+        ...(confluenceBase
+          ? {
+              "/confluence-api": {
+                target: confluenceBase,
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/confluence-api/, ""),
+                secure: true,
+              },
+            }
+          : {}),
+      },
     },
   };
 });

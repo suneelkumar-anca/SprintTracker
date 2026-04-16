@@ -94,6 +94,51 @@
         from { transform: rotate(0deg); }
         to   { transform: rotate(360deg); }
       }
+      @keyframes slideUp {
+        from { 
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes progressFill {
+        from { width: 0%; }
+        to   { width: var(--progress-width, 100%); }
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      @keyframes paperPlane {
+        0% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1) rotate(0deg);
+        }
+        80% {
+          opacity: 1;
+          transform: translate(80px, -120px) scale(1) rotate(25deg);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(150px, -200px) scale(0.3) rotate(45deg);
+        }
+      }
+      @keyframes scaleCheck {
+        0% {
+          opacity: 0;
+          transform: scale(0);
+        }
+        50% {
+          transform: scale(1.2);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
       button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
         outline: 2px solid #3b82f6;
         outline-offset: 2px;

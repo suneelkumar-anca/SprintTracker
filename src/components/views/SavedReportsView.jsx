@@ -1,7 +1,7 @@
 import SavedReportCard from "./SavedReportCard.jsx";
 import { useDragReorder } from "../../hooks/useDragReorder.js";
 
-export default function SavedReportsView({ savedReports, onLoad, onDelete, onExport, onReorder }) {
+export default function SavedReportsView({ savedReports, onLoad, onDelete, onExport, onPublishConfluence, onReorder }) {
   const { dragIdx, overIdx, handleDragStart, handleDragOver, handleDrop, handleDragEnd, moveCard } = useDragReorder(savedReports, onReorder);
 
   return (
@@ -23,10 +23,10 @@ export default function SavedReportsView({ savedReports, onLoad, onDelete, onExp
           <p style={{ fontSize: 12, color: "var(--text-5)", margin: 0 }}>Load a sprint and click "↓ Save" to snapshot it here.</p>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 16 }}>
           {savedReports.map((r, idx) => (
             <SavedReportCard key={r.id} report={r} idx={idx} total={savedReports.length}
-              onLoad={onLoad} onDelete={onDelete} onExport={onExport}
+              onLoad={onLoad} onDelete={onDelete} onExport={onExport} onPublishConfluence={onPublishConfluence}
               onMoveUp={idx > 0 ? () => moveCard(idx, -1) : null}
               onMoveDown={idx < savedReports.length - 1 ? () => moveCard(idx, 1) : null}
               onDragStart={handleDragStart} onDragOver={handleDragOver}
