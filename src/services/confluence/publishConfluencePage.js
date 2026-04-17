@@ -1,5 +1,5 @@
 import { confluenceGet, confluencePost, confluencePut } from "./confluenceClient.js";
-import { buildConfluencePage } from "./confluencePageBuilder.js";
+import { buildConfluencePage, buildRetrospectivePage } from "./confluencePageBuilder.js";
 import { buildMilestonePage } from "./confluenceMilestonePageBuilder.js";
 import { CONFLUENCE_CONFIG } from "./confluenceConfig.js";
 
@@ -41,8 +41,33 @@ async function getOrCreateParentPage() {
   }
 }
 
-async function getOrCreateMilestoneParentPage() {
+async function getOrCreateRetrospectiveParentPage() {
   try {
+    const res = await confluenceGet(`/content?spaceKey=${CONFLUENCE_CONFIG.SPACE_KEY}&title=Sprint Retrospectives&limit=1`);
+    if (res.results && res.results.length > 0) {
+      console.log("Found existing Sprint Retrospectives parent page:", res.results[0].id);
+      return res.results[0].id;
+    }
+  } catch (err) {
+    console.warn("Could not find existing Sprint Retrospectives page:", err.message);
+  }
+
+  const createRes = await confluencePost("/content", {
+    type: "page",
+    title: "Sprint Retrospectives",
+    space: { key: CONFLUENCE_CONFIG.SPACE_KEY },
+    body: {
+      storage: {
+        value: "<p>Automated sprint retrospectives exported from Sprint Tracker.</p>",
+        representation: "storage",
+      },
+    },
+  });
+  console.log("Created Sprint Retrospectives parent page with ID:", createRes.id);
+  return createRes.id;
+}
+
+async function getOrCreateMilestoneParentPage() {  try {
     const res = await confluenceGet(`/content?spaceKey=${CONFLUENCE_CONFIG.SPACE_KEY}&title=Milestone Reports&limit=1`);
     if (res.results && res.results.length > 0) {
       console.log("Found existing Milestone Reports parent page:", res.results[0].id);
@@ -156,6 +181,30 @@ export async function publishSprintPage(tickets, sprintName) {
       success: false,
       error: err.message || "Failed to publish sprint page",
     };
+  }
+}
+
+export async function publishRetrospectivePage(tickets, sprintName) {
+  try {
+    const parentPageId = await getOrCreateRetrospectiveParentPage();
+    const pageHtml = await buildRetrospectivePage(tickets, sprintName);
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+    const pageTitle = `${sprintName} - retrospective - ${timestamp}`;
+
+    const createRes = await confluencePost("/content", {
+      type: "page",
+      title: pageTitle,
+      space: { key: CONFLUENCE_CONFIG.SPACE_KEY },
+      ancestors: [{ id: parentPageId }],
+      body: { storage: { value: pageHtml, representation: "storage" } },
+    });
+    const pageUrl = `${CONFLUENCE_CONFIG.BASE}/wiki/spaces/${CONFLUENCE_CONFIG.SPACE_KEY}/pages/${createRes.id}`;
+    return { success: true, pageId: createRes.id, pageTitle, pageUrl, message: `Retrospective page published: ${pageTitle}`, isUpdate: false };
+  } catch (err) {
+    console.error("Error publishing retrospective page to Confluence:", err);
+    return { success: false, error: err.message || "Failed to publish retrospective page" };
   }
 }
 

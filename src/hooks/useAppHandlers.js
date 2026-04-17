@@ -16,14 +16,27 @@ export function useAppHandlers(state) {
     [filters.filteredTickets, currentSprintName]
   );
 
-  const handlePublishConfluence = useCallback(
+  const handlePublishSprintReport = useCallback(
     async (report) => {
       const { publishSprintPage } = await import("../services/confluence/index.js");
       const result = await publishSprintPage(report.tickets, report.name);
       if (result.success) {
-        alert(`✓ ${result.message}\n\n${result.pageUrl}`);
+        return result;
       } else {
-        alert(`✗ Failed to publish: ${result.error}`);
+        throw new Error(result.error);
+      }
+    },
+    []
+  );
+
+  const handlePublishRetrospective = useCallback(
+    async (report) => {
+      const { publishRetrospectivePage } = await import("../services/confluence/index.js");
+      const result = await publishRetrospectivePage(report.tickets, report.name);
+      if (result.success) {
+        return result;
+      } else {
+        throw new Error(result.error);
       }
     },
     []
@@ -58,5 +71,5 @@ export function useAppHandlers(state) {
     state.sprintTickets.length, lookup.ticket?.id, handleSelectTicket, saved.isAlreadySaved, saved.saveFeedback, saved.saveCurrentSprint, handleExport, refreshBoards,
   ]);
 
-  return { handleSelectTicket, handleExport, handlePublishConfluence, handleLoadSnapshot, sprintPanelProps };
+  return { handleSelectTicket, handleExport, handlePublishSprintReport, handlePublishRetrospective, handleLoadSnapshot, sprintPanelProps };
 }

@@ -2,7 +2,7 @@ import { jiraGet } from "./jiraClient.js";
 
 const APP_TYPES = ["stash", "bitbucket", "github", "github-enterprise", "gitlab"];
 
-function withTimeout(promise, timeoutMs = 5000) {
+function withTimeout(promise, timeoutMs = 15000) {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
@@ -19,7 +19,7 @@ export async function fetchPullRequests(numericId) {
       jiraGet(
         `/rest/dev-status/1.0/issue/detail?issueId=${numericId}&applicationType=${app}&dataType=pullrequest`
       ),
-      5000
+      15000
     ),
   }));
 

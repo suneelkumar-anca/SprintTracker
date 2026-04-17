@@ -1,7 +1,7 @@
 import SavedReportCard from "./SavedReportCard.jsx";
 import { useDragReorder } from "../../hooks/useDragReorder.js";
 
-export default function SavedReportsView({ savedReports, onLoad, onDelete, onExport, onPublishConfluence, onReorder }) {
+export default function SavedReportsView({ savedReports, onLoad, onDelete, onExport, onPublishReport, onPublishRetro, onReorder }) {
   const { dragIdx, overIdx, handleDragStart, handleDragOver, handleDrop, handleDragEnd, moveCard } = useDragReorder(savedReports, onReorder);
 
   return (
@@ -26,7 +26,7 @@ export default function SavedReportsView({ savedReports, onLoad, onDelete, onExp
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 16 }}>
           {savedReports.map((r, idx) => (
             <SavedReportCard key={r.id} report={r} idx={idx} total={savedReports.length}
-              onLoad={onLoad} onDelete={onDelete} onExport={onExport} onPublishConfluence={onPublishConfluence}
+              onLoad={onLoad} onDelete={onDelete} onExport={onExport} onPublishReport={onPublishReport} onPublishRetro={onPublishRetro}
               onMoveUp={idx > 0 ? () => moveCard(idx, -1) : null}
               onMoveDown={idx < savedReports.length - 1 ? () => moveCard(idx, 1) : null}
               onDragStart={handleDragStart} onDragOver={handleDragOver}

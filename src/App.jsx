@@ -14,7 +14,7 @@ const MilestonesView = lazy(() => import("./components/views/MilestonesView.jsx"
 
 export default function App() {
   const state = useAppState();
-  const { handleSelectTicket, handleLoadSnapshot, handlePublishConfluence, sprintPanelProps } = useAppHandlers(state);
+  const { handleSelectTicket, handleLoadSnapshot, handlePublishSprintReport, handlePublishRetrospective, sprintPanelProps } = useAppHandlers(state);
   const { configured, activeView, setActiveView, themePref, setThemePref,
     sprintTickets, sprintLoading, sprintLoaded, lookup, saved,
     currentSprintName, currentSprint, totalSP, doneSP, doneCount } = state;
@@ -29,7 +29,7 @@ export default function App() {
         {activeView === "saved" && (
           <SavedReportsView savedReports={saved.savedReports}
             onLoad={handleLoadSnapshot}
-            onDelete={saved.removeSavedReport} onExport={async (r) => { const { exportToExcel } = await import("./services/excel/index.js"); exportToExcel(r.tickets, r.name); }} onPublishConfluence={isConfluenceConfigured() ? handlePublishConfluence : null} onReorder={saved.reorderSaved} />
+            onDelete={saved.removeSavedReport} onExport={async (r) => { const { exportToExcel } = await import("./services/excel/index.js"); exportToExcel(r.tickets, r.name); }} onPublishReport={isConfluenceConfigured() ? handlePublishSprintReport : null} onPublishRetro={isConfluenceConfigured() ? handlePublishRetrospective : null} onReorder={saved.reorderSaved} />
         )}
         {activeView === "dashboard" && (
           <DashboardView sprintTickets={sprintTickets} sprintLoaded={sprintLoaded} sprintLoading={sprintLoading}
