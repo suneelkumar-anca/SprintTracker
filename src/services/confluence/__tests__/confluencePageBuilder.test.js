@@ -78,7 +78,7 @@ describe("confluencePageBuilder", () => {
       const html = await buildConfluencePersonReport(mockTickets, "Sprint 49");
       expect(html).toContain("<h2>Sprint: Sprint 49 - Report</h2>");
       expect(html).toContain("Total Tickets:");
-      expect(html).toContain("Done:");
+      expect(html).toContain("Jira Tickets Completed:");
       expect(html).toContain("Story Points:");
       expect(html).toContain("Team Members:");
     });
@@ -94,7 +94,7 @@ describe("confluencePageBuilder", () => {
       // John Doe: 2 tickets (1 In Progress, 1 Done)
       expect(html).toContain("<strong>Assigned:</strong> 2");
       // Bob Johnson: 1 ticket (1 Done)
-      expect(html).toContain("<strong>Done:</strong> 1/1 (100%)");
+      expect(html).toContain("<strong>Jira Tickets Completed:</strong> 1/1 (100%)");
     });
 
     it("should include person-specific tables with condensed columns", async () => {
