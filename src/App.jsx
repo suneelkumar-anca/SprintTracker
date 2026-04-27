@@ -44,9 +44,7 @@ export default function App() {
             configured={configured} sprintProps={sprintPanelProps} />
         )}
         {activeView === "milestones" && (
-          <MilestonesView sprintTickets={sprintTickets} sprintLoading={sprintLoading}
-            onPublishMilestone={isConfluenceConfigured() ? (m) => { console.log("Publish milestone:", m); } : null}
-            onExportMilestone={async (m) => { console.log("Export milestone:", m); }} />
+          <MilestonesView configured={configured} />
         )}
         </Suspense>
       </main>

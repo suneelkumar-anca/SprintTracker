@@ -559,6 +559,10 @@ export async function buildConfluencePersonReport(tickets, sprintName) {
   return html;
 }
 
+export async function buildConfluencePage(tickets, sprintName) {
+  return await buildConfluencePersonReport(tickets, sprintName);
+}
+
 export async function buildRetrospectivePage(tickets, sprintName) {
   // Clear PR cache at the start of each publish run to avoid stale data across sprints
   _prCache.clear();
@@ -848,8 +852,4 @@ export function buildConfluenceTable(tickets, sprintName) {
 
   html += `</tbody></table>`;
   return html;
-}
-
-export async function buildConfluencePage(tickets, sprintName) {
-  return await buildConfluencePersonReport(tickets, sprintName);
 }

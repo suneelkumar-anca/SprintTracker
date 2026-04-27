@@ -7,9 +7,25 @@
 import express from 'express';
 import cors from 'cors';
 import { readFileSync } from 'fs';
+import pino from 'pino';
 
 const MODELS_API_URL = 'https://models.inference.ai.azure.com/chat/completions';
 const ENV_PATH = new URL('.env', import.meta.url);
+
+const logger = pino(
+  {
+    level: process.env.LOG_LEVEL || 'info',
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'HH:MM:ss.l',
+        ignore: 'pid,hostname',
+        singleLine: false,
+      },
+    },
+  }
+);
 
 /** Parse .env on every call so token changes are picked up without restarting. */
 function getEnvVar(key) {
@@ -67,7 +83,7 @@ app.post('/api/retrospective', async (req, res) => {
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('Copilot API error:', response.status, error);
+      logger.error({ status: response.status, error }, 'Copilot API error');
       return res.status(response.status).json({ error });
     }
 
@@ -79,10 +95,13 @@ app.post('/api/retrospective', async (req, res) => {
     const completionTokens = usage?.completion_tokens ?? '?';
     const totalTokens = usage?.total_tokens ?? '?';
 
-    console.log(`✓ Retrospective generated  model=${model}  tokens=${totalTokens} (prompt=${promptTokens}, completion=${completionTokens})`);
+    logger.info(
+      { model, promptTokens, completionTokens, totalTokens },
+      `Retrospective generated | ${totalTokens} tokens (${promptTokens} in / ${completionTokens} out)`
+    );
     res.json({ retrospective: content });
   } catch (error) {
-    console.error('Retrospective generation failed:', error.message);
+    logger.error(error, 'Retrospective generation failed');
     res.status(500).json({ error: error.message });
   }
 });
@@ -96,11 +115,9 @@ const PORT = process.env.SERVER_PORT || 3001;
 app.listen(PORT, () => {
   const token = getEnvVar('VITE_GITHUB_TOKEN');
   const model = getEnvVar('VITE_AI_MODEL') || 'gpt-4o';
-  console.log(`✓ Proxy server on http://localhost:${PORT}`);
-  console.log(`✓ Target: ${MODELS_API_URL}`);
-  console.log(`✓ Model: ${model}`);
-  console.log(`✓ Token: ${token ? 'configured' : 'MISSING — set VITE_GITHUB_TOKEN in .env'}`);
-  console.log(`✓ Token reloads from .env on each request — no restart needed after changes`);
+  logger.info({ port: PORT, model, token: token ? 'configured' : 'MISSING' }, 'Proxy server started');
+  logger.info(`Target: ${MODELS_API_URL}`);
+  logger.info('Token reloads from .env on each request — no restart needed after changes');
 });
 
 process.on('SIGINT', () => process.exit(0));

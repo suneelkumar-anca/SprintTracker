@@ -293,4 +293,129 @@ Return ONLY valid raw JSON (no code fences), using each person's exact name as t
     return null;
   }
 }
-  
+
+/**
+ * Generates an AI-driven executive milestone status summary for Confluence.
+ * Persona: principal program manager, 30+ years experience, writing for executive stakeholders.
+ * Uses the same /api/retrospective proxy endpoint — the model is generic.
+ *
+ * @param {Array} tickets - Mapped issue objects
+ * @param {string} milestoneName - Display name of the milestone
+ * @returns {Promise<{executiveSummary: string, riskLevel: string, keyRisks: string[], recommendations: string[], closingNote: string} | null>}
+ */
+export async function generateAIMilestoneSummary(tickets, milestoneName) {
+  if (!tickets || tickets.length === 0) return null;
+
+  try {
+    const totalCount = tickets.length;
+    const doneCount = tickets.filter(t => {
+      const s = (t.status ?? '').toLowerCase();
+      return s === 'done' || s === 'closed';
+    }).length;
+    const completionPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+    const totalSP = tickets.reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
+    const doneSP = tickets
+      .filter(t => { const s = (t.status ?? '').toLowerCase(); return s === 'done' || s === 'closed'; })
+      .reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
+
+    const statusCounts = {};
+    tickets.forEach(t => { statusCounts[t.status] = (statusCounts[t.status] || 0) + 1; });
+
+    const rejectedCount = tickets.filter(t => {
+      const s = (t.status ?? '').toLowerCase();
+      return s === 'rejected' || s === 'declined';
+    }).length;
+
+    const blockedCount = tickets.filter(t => {
+      const s = (t.status ?? '').toLowerCase();
+      return s.includes('blocked') || s.includes('impediment');
+    }).length;
+
+    const unassignedCount = tickets.filter(t => !t.assigneeName || t.assigneeName === 'Unassigned').length;
+    const noSpCount = tickets.filter(t => !t.sp || !Number.isFinite(t.sp) || t.sp === 0).length;
+
+    const ratings = tickets.map(t => t.reviewRating).filter(r => r != null && Number.isFinite(Number(r)));
+    const avgRating = ratings.length > 0
+      ? (Math.round((ratings.reduce((s, r) => s + Number(r), 0) / ratings.length) * 10) / 10)
+      : null;
+
+    // Sample up to 20 ticket summaries for context
+    const sampleTickets = tickets.slice(0, 20).map(t =>
+      `[${t.id}] ${t.status} | ${t.sp ?? '?'} SP | ${t.assigneeName || 'Unassigned'} | ${t.description?.slice(0, 80) ?? ''}`
+    ).join('\n');
+
+    const prompt = `You are a principal program manager with 30+ years of experience writing executive milestone status reports for senior leadership and stakeholders.
+
+Your report must be grounded entirely in the ACTUAL milestone data provided. Every claim, number, and risk must come directly from that data. No generalities. No invented patterns.
+
+COMMUNICATION PRINCIPLES:
+1. Write for executive readers — concise, confident, and data-grounded. No jargon, no waffle.
+2. Name risks clearly and honestly. Pair every risk with what can be done about it.
+3. Separate delivery facts from interpretation. State the numbers, then assess their meaning.
+4. Use calm, professional language. Not alarming, not dismissive. Clarity plus direction.
+5. Acknowledge what is on track before addressing what needs attention.
+6. Recommendations must be concrete and actionable — not generic advice.
+
+DATA RULES — non-negotiable:
+- Use ONLY real values: real counts, real percentages, real ticket IDs where relevant.
+- NEVER write placeholder text like "X tickets", "Y%", "N items", "e.g.", "[number]".
+- Do NOT use markdown code fences. Return raw JSON only.
+- Each string in arrays must be ONE complete, standalone sentence.
+- Do NOT prefix items with labels like "RISK 1:", "ACTION:", etc.
+
+MILESTONE: "${milestoneName}"
+
+MILESTONE METRICS:
+- Total issues: ${totalCount} | Done: ${doneCount} (${completionPct}%) | Story Points: ${doneSP}/${totalSP} (${totalSP > 0 ? Math.round((doneSP / totalSP) * 100) : 0}%)
+- In Progress: ${Object.entries(statusCounts).filter(([k]) => k.toLowerCase().includes('progress') || k.toLowerCase().includes('review')).reduce((s, [, v]) => s + v, 0)}
+- Rejected/Declined: ${rejectedCount} | Blocked: ${blockedCount}
+- Unassigned issues: ${unassignedCount} | Issues without SP estimate: ${noSpCount}
+${avgRating != null ? `- Avg review rating: ${avgRating}/5` : ''}
+
+STATUS BREAKDOWN:
+${Object.entries(statusCounts).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
+
+SAMPLE ISSUES (up to 20):
+${sampleTickets}
+
+Determine riskLevel as: "Green" if completion >= 80%, "Amber" if 50-79%, "Red" if below 50%.
+
+Return ONLY valid raw JSON (no code fences):
+{
+  "executiveSummary": "2-3 sentence paragraph: current status, completion percentage, confidence in delivery.",
+  "riskLevel": "Green" | "Amber" | "Red",
+  "keyRisks": ["3-5 sentences, each a distinct risk grounded in the data"],
+  "recommendations": ["3-5 sentences, each a distinct, concrete next action"],
+  "closingNote": "1 sentence: forward-looking, directional, confidence-appropriate for current riskLevel."
+}`;
+
+    const response = await fetch(`${BACKEND_URL}/api/retrospective`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Backend error ${response.status}`);
+    }
+
+    const { retrospective } = await response.json();
+    if (!retrospective) return null;
+
+    const cleaned = retrospective.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+    const parsed = JSON.parse(cleaned);
+    if (!parsed.executiveSummary || !parsed.riskLevel) return null;
+
+    return {
+      executiveSummary: parsed.executiveSummary,
+      riskLevel: parsed.riskLevel,
+      keyRisks: parsed.keyRisks ?? [],
+      recommendations: parsed.recommendations ?? [],
+      closingNote: parsed.closingNote ?? '',
+    };
+  } catch (err) {
+    console.error('❌ AI milestone summary generation failed:', err.message);
+    return null;
+  }
+}

@@ -11,7 +11,7 @@ export function useMilestoneActions() {
     setLoading(true);
     setError("");
     try {
-      const result = await publishMilestonePage(milestone.tickets, milestone.name, milestone.deadlineDate);
+      const result = await publishMilestonePage(milestone.tickets, milestone.name, milestone.deadlineDate, milestone.reviewDate);
       if (result.success) {
         console.log("Milestone published:", result.message);
         if (result.pageUrl) window.open(result.pageUrl, "_blank");

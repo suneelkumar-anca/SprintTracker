@@ -1,26 +1,34 @@
 import { jiraGet } from "./jiraClient.js";
 
 const APP_TYPES = ["stash", "bitbucket", "github", "github-enterprise", "gitlab"];
-
-function withTimeout(promise, timeoutMs = 15000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
-    ),
-  ]);
-}
+const PR_TIMEOUT_MS = 30000; // 30 seconds per request
 
 export async function fetchPullRequests(numericId) {
   if (!numericId) return [];
+  
   const requests = APP_TYPES.map((app) => ({
     app,
-    promise: withTimeout(
-      jiraGet(
-        `/rest/dev-status/1.0/issue/detail?issueId=${numericId}&applicationType=${app}&dataType=pullrequest`
-      ),
-      15000
-    ),
+    promise: (async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), PR_TIMEOUT_MS);
+        
+        try {
+          const result = await jiraGet(
+            `/rest/dev-status/1.0/issue/detail?issueId=${numericId}&applicationType=${app}&dataType=pullrequest`,
+            { signal: controller.signal }
+          );
+          return result;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error(`Request timeout after ${PR_TIMEOUT_MS}ms`);
+        }
+        throw err;
+      }
+    })(),
   }));
 
   const settled = await Promise.allSettled(requests.map((r) => r.promise));
@@ -30,7 +38,7 @@ export async function fetchPullRequests(numericId) {
   settled.forEach((result, i) => {
     if (result.status !== "fulfilled") {
       if (result.reason) {
-        console.debug(`PR fetch for ${requests[i].app} skipped:`, result.reason.message);
+        console.warn(`PR fetch for ${requests[i].app} failed:`, result.reason.message);
       }
       return;
     }

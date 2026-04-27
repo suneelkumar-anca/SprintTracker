@@ -1,4 +1,4 @@
-import { EXCEL_HEADERS, EXCEL_COL_WIDTHS, HEADER_STYLE, TITLE_STYLE, NUM_COLS, ticketToRow } from "./excelConfig.js";
+import { EXCEL_HEADERS, EXCEL_COL_WIDTHS, HEADER_STYLE, TITLE_STYLE, NUM_COLS, DATE_COL_INDICES, DATE_NUM_FMT, ticketToRow } from "./excelConfig.js";
 
 export async function exportToExcel(tickets, sprintName = "Sprint_Report") {
   if (!window.Buffer) { const { Buffer } = await import("buffer"); window.Buffer = Buffer; }
@@ -15,18 +15,41 @@ export async function exportToExcel(tickets, sprintName = "Sprint_Report") {
   });
 
   const dataRows = tickets.map((t) => ticketToRow(t, sprintName));
+  
   XLSX.utils.sheet_add_aoa(ws, dataRows, { origin: "A5" });
+
+  // Apply date number format so Excel treats date columns as real dates (enables filtering/sorting)
+  tickets.forEach((_, i) => {
+    DATE_COL_INDICES.forEach((ci) => {
+      const cellRef = XLSX.utils.encode_cell({ r: 4 + i, c: ci });
+      if (ws[cellRef] && ws[cellRef].v !== "" && ws[cellRef].v !== undefined) {
+        ws[cellRef].t = "n";
+        ws[cellRef].s = { numFmt: DATE_NUM_FMT };
+      }
+    });
+  });
+
+  // Format Story Points column (column E = index 4) as numbers - properly merge cell properties
+  tickets.forEach((t, i) => {
+    const spValue = t.sp !== null && t.sp !== undefined && t.sp !== "" ? Number(t.sp) : null;
+    if (spValue !== null && !isNaN(spValue)) {
+      const cellRef = XLSX.utils.encode_cell({ r: 4 + i, c: 4 });
+      if (ws[cellRef]) {
+        ws[cellRef].t = "n";
+        ws[cellRef].v = spValue;
+      }
+    }
+  });
 
   tickets.forEach((t, i) => {
     if (!t.jiraUrl) return;
-    ws[XLSX.utils.encode_cell({ r: 4 + i, c: 15 })] = {
-      t: "s", v: t.jiraUrl,
-      l: { Target: t.jiraUrl, Tooltip: `Open ${t.id} in Jira` },
-    };
+    const cellRef = XLSX.utils.encode_cell({ r: 4 + i, c: 15 });
+    if (ws[cellRef]) {
+      ws[cellRef].l = { Target: t.jiraUrl, Tooltip: `Open ${t.id} in Jira` };
+    }
   });
 
   ws["!cols"]       = EXCEL_COL_WIDTHS;
-  ws["!freeze"]     = { xSplit: 0, ySplit: 4 };
   const lastColLetter = XLSX.utils.encode_col(NUM_COLS - 1);
   ws["!autofilter"] = { ref: `A4:${lastColLetter}4` };
   ws["!ref"]        = `A1:${lastColLetter}${4 + tickets.length}`;

@@ -1,4 +1,4 @@
-import { SP_CANDIDATES, FIELD_TL_COMMENT, FIELD_REVIEW_RATING, FIELD_ARTIFACTS } from "./jiraConfig.js";
+import { SP_CANDIDATES, FIELD_TL_COMMENT, FIELD_REVIEW_RATING, FIELD_ARTIFACTS, FIELD_TEAM } from "./jiraConfig.js";
 import { getDetectedSpFieldId } from "./storyPointsDetector.js";
 
 export function buildIssueFields(withDescription = false) {
@@ -7,7 +7,7 @@ export function buildIssueFields(withDescription = false) {
     "summary", "status", "assignee", ...spFields, "customfield_10020",
     "priority", "issuetype", "reporter", "labels", "components",
     "duedate", "created", "updated", "timespent", "aggregatetimespent",
-    FIELD_TL_COMMENT, FIELD_REVIEW_RATING, FIELD_ARTIFACTS,
+    FIELD_TL_COMMENT, FIELD_REVIEW_RATING, FIELD_ARTIFACTS, FIELD_TEAM,
   ];
   if (withDescription) base.splice(1, 0, "description");
   return base.join(",");

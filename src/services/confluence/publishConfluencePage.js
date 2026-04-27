@@ -208,10 +208,10 @@ export async function publishRetrospectivePage(tickets, sprintName) {
   }
 }
 
-export async function publishMilestonePage(tickets, milestoneName, deadlineDate) {
+export async function publishMilestonePage(tickets, milestoneName, deadlineDate, reviewDate = null) {
   try {
     const parentPageId = await getOrCreateMilestoneParentPage();
-    const pageHtml = await buildMilestonePage(tickets, milestoneName, deadlineDate);
+    const pageHtml = await buildMilestonePage(tickets, milestoneName, deadlineDate, reviewDate);
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
     const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
