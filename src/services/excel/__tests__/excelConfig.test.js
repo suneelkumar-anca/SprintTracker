@@ -28,7 +28,7 @@ describe("ticketToRow", () => {
   it("handles empty ticket gracefully", () => {
     const row = ticketToRow({}, "Fallback");
     expect(row).toHaveLength(NUM_COLS);
-    expect(row[0]).toBeUndefined();
+    expect(row[0]).toBe("");
     expect(row[8]).toBe("Fallback");
   });
 });

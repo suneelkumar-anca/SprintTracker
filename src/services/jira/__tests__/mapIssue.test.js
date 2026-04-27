@@ -4,7 +4,7 @@ vi.mock("../storyPointsDetector.js", () => ({ getDetectedSpFieldId: () => null }
 vi.mock("../jiraConfig.js", () => ({
   FIELD_TL_COMMENT: "cf_tl", FIELD_REVIEW_RATING: "cf_rr",
   FIELD_ARTIFACTS: "cf_art", SP_CANDIDATES: ["customfield_10016"],
-  FIELD_STORY_POINTS_ENV: null,
+  FIELD_STORY_POINTS_ENV: null, FIELD_TEAM: "cf_team",
 }));
 
 const { mapIssue } = await import("../mapIssue.js");
