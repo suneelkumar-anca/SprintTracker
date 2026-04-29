@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { fetchBoardsByTeam, fetchBoardLabels, fetchIssuesByLabels } from "../services/jira/fetchBoardsByTeam.js";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { fetchBoardsByTeam, fetchBoardLabels, fetchIssuesByLabels, fetchBoardEpics, fetchLabelsByEpic, fetchIssuesByEpicGlobal } from "../services/jira/fetchBoardsByTeam.js";
 import { mapIssue } from "../services/jira/mapIssue.js";
 import { detectStoryPointsField } from "../services/jira/storyPointsDetector.js";
 
@@ -11,11 +11,21 @@ import { detectStoryPointsField } from "../services/jira/storyPointsDetector.js"
 export function useBoardLabels(projectLocation = null) {
   const [boards, setBoards] = useState([]);
   const [selectedBoardId, setSelectedBoardId] = useState("");
+  const [epics, setEpics] = useState([]);
+  const [selectedEpicId, setSelectedEpicId] = useState("");
+  const [epicsLoading, setEpicsLoading] = useState(false);
   const [labels, setLabels] = useState([]);
   const [selectedLabels, setSelectedLabels] = useState([]);
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Global epic mode
+  const [selectedGlobalEpicId, setSelectedGlobalEpicId] = useState("");
+  const [selectedGlobalEpicKey, setSelectedGlobalEpicKey] = useState("");
+  const [selectedGlobalEpicName, setSelectedGlobalEpicName] = useState("");
+  // Ref to guard effects from clearing state while global epic fetch is in-flight
+  const globalEpicActiveRef = useRef(false);
 
   // Detect story points field on mount
   useEffect(() => {
@@ -48,26 +58,47 @@ export function useBoardLabels(projectLocation = null) {
     return () => { mounted = false; };
   }, [projectLocation]);
 
-  // Fetch labels when selected board changes
+  // Fetch epics when selected board changes
+  useEffect(() => {
+    let mounted = true;
+    if (!selectedBoardId) { setEpics([]); setSelectedEpicId(""); return; }
+
+    const board = boards.find(b => String(b.id) === String(selectedBoardId));
+    setEpicsLoading(true);
+    fetchBoardEpics(selectedBoardId, board?.projectKey ?? null)
+      .then(list => { if (mounted) setEpics(list); })
+      .catch(() => { if (mounted) setEpics([]); })
+      .finally(() => { if (mounted) setEpicsLoading(false); });
+
+    return () => { mounted = false; };
+  }, [selectedBoardId, boards]);
+
+  // Fetch labels when board or selected epic changes
   useEffect(() => {
     let mounted = true;
 
     async function loadLabels() {
       if (!selectedBoardId) {
-        setLabels([]);
-        setSelectedLabels([]);
-        setIssues([]);
+        if (!globalEpicActiveRef.current) {
+          setLabels([]);
+          setSelectedLabels([]);
+          setIssues([]);
+        }
         return;
       }
 
       try {
         setLoading(true);
         setError(null);
-        const labelList = await fetchBoardLabels(selectedBoardId);
-        
+        const board = boards.find(b => String(b.id) === String(selectedBoardId));
+        const selectedEpic = epics.find(e => e.id === selectedEpicId);
+        const labelList = selectedEpicId
+          ? await fetchLabelsByEpic(selectedBoardId, selectedEpicId, selectedEpic?.key ?? null, board?.projectKey ?? null)
+          : await fetchBoardLabels(selectedBoardId);
+
         if (!mounted) return;
         setLabels(labelList);
-        setSelectedLabels([]); // Reset selected labels when board changes
+        setSelectedLabels([]); // Reset selected labels when board/epic changes
         setIssues([]);
       } catch (err) {
         if (mounted) {
@@ -81,7 +112,7 @@ export function useBoardLabels(projectLocation = null) {
 
     loadLabels();
     return () => { mounted = false; };
-  }, [selectedBoardId]);
+  }, [selectedBoardId, selectedEpicId, boards, epics]);
 
   // Fetch issues when selected labels change
   useEffect(() => {
@@ -89,7 +120,7 @@ export function useBoardLabels(projectLocation = null) {
 
     async function loadIssues() {
       if (!selectedBoardId || selectedLabels.length === 0) {
-        setIssues([]);
+        if (!globalEpicActiveRef.current) setIssues([]);
         return;
       }
 
@@ -128,16 +159,69 @@ export function useBoardLabels(projectLocation = null) {
     });
   };
 
+  // Select a global epic: fetch all its issues and extract labels (board-independent)
+  const selectGlobalEpic = useCallback(async (epicId, epicKey, epicName) => {
+    globalEpicActiveRef.current = !!epicId;
+    setSelectedBoardId("");
+    setSelectedEpicId("");
+    setSelectedLabels([]);
+    setIssues([]);
+    setLabels([]);
+    setSelectedGlobalEpicId(epicId || "");
+    setSelectedGlobalEpicKey(epicKey || "");
+    setSelectedGlobalEpicName(epicName || "");
+
+    if (!epicKey) {
+      globalEpicActiveRef.current = false;
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const rawIssues = await fetchIssuesByEpicGlobal(epicKey, epicId, boards.map(b => String(b.id)));
+      const mapped = rawIssues.map(mapIssue);
+      const labelSet = new Set();
+      for (const issue of rawIssues) {
+        for (const lbl of issue.fields?.labels ?? []) {
+          if (lbl && typeof lbl === "string") labelSet.add(lbl);
+        }
+      }
+      setIssues(mapped);
+      setLabels([...labelSet].sort());
+    } catch (err) {
+      setError(err.message || "Failed to fetch epic issues");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // When labels are toggled in global epic mode, filter the already-fetched issues locally
+  const globalEpicFilteredIssues = selectedGlobalEpicId && issues.length > 0 && selectedLabels.length > 0
+    ? issues.filter(issue =>
+        selectedLabels.some(lbl => (issue.labels ?? []).map(l => l.toLowerCase()).includes(lbl.toLowerCase()))
+      )
+    : selectedGlobalEpicId ? issues : null;
+
   return {
     boards,
     selectedBoardId,
     setSelectedBoardId,
+    epics,
+    selectedEpicId,
+    setSelectedEpicId,
+    epicsLoading,
     labels,
     selectedLabels,
     setSelectedLabels,
     toggleLabel,
-    issues,
+    issues: globalEpicFilteredIssues ?? issues,
     loading,
     error,
+    // Global epic mode
+    selectedGlobalEpicId,
+    selectedGlobalEpicKey,
+    selectedGlobalEpicName,
+    selectGlobalEpic,
   };
 }

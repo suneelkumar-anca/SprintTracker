@@ -308,85 +308,171 @@ export async function generateAIMilestoneSummary(tickets, milestoneName) {
 
   try {
     const totalCount = tickets.length;
-    const doneCount = tickets.filter(t => {
-      const s = (t.status ?? '').toLowerCase();
-      return s === 'done' || s === 'closed';
-    }).length;
+    const isDone = t => { const s = (t.status ?? '').toLowerCase(); return s === 'done' || s === 'closed'; };
+    const isRejected = t => { const s = (t.status ?? '').toLowerCase(); return s === 'rejected' || s === 'declined'; };
+    const isBlocked = t => { const s = (t.status ?? '').toLowerCase(); return s.includes('blocked') || s.includes('impediment'); };
+    const isInProgress = t => { const s = (t.status ?? '').toLowerCase(); return s.includes('progress') || s.includes('review') || s.includes('testing') || s.includes('uat') || s.includes('feedback'); };
+
+    const doneCount = tickets.filter(isDone).length;
     const completionPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
     const totalSP = tickets.reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
-    const doneSP = tickets
-      .filter(t => { const s = (t.status ?? '').toLowerCase(); return s === 'done' || s === 'closed'; })
-      .reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
-
-    const statusCounts = {};
-    tickets.forEach(t => { statusCounts[t.status] = (statusCounts[t.status] || 0) + 1; });
-
-    const rejectedCount = tickets.filter(t => {
-      const s = (t.status ?? '').toLowerCase();
-      return s === 'rejected' || s === 'declined';
-    }).length;
-
-    const blockedCount = tickets.filter(t => {
-      const s = (t.status ?? '').toLowerCase();
-      return s.includes('blocked') || s.includes('impediment');
-    }).length;
-
+    const doneSP = tickets.filter(isDone).reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
+    const rejectedCount = tickets.filter(isRejected).length;
+    const blockedCount = tickets.filter(isBlocked).length;
+    const inProgressCount = tickets.filter(isInProgress).length;
     const unassignedCount = tickets.filter(t => !t.assigneeName || t.assigneeName === 'Unassigned').length;
     const noSpCount = tickets.filter(t => !t.sp || !Number.isFinite(t.sp) || t.sp === 0).length;
 
     const ratings = tickets.map(t => t.reviewRating).filter(r => r != null && Number.isFinite(Number(r)));
     const avgRating = ratings.length > 0
-      ? (Math.round((ratings.reduce((s, r) => s + Number(r), 0) / ratings.length) * 10) / 10)
-      : null;
+      ? (Math.round((ratings.reduce((s, r) => s + Number(r), 0) / ratings.length) * 10) / 10) : null;
 
-    // Sample up to 20 ticket summaries for context
-    const sampleTickets = tickets.slice(0, 20).map(t =>
-      `[${t.id}] ${t.status} | ${t.sp ?? '?'} SP | ${t.assigneeName || 'Unassigned'} | ${t.description?.slice(0, 80) ?? ''}`
-    ).join('\n');
+    // Status breakdown
+    const statusCounts = {};
+    tickets.forEach(t => { statusCounts[t.status ?? 'Unknown'] = (statusCounts[t.status ?? 'Unknown'] || 0) + 1; });
 
-    const prompt = `You are a principal program manager with 30+ years of experience writing executive milestone status reports for senior leadership and stakeholders.
+    // Priority distribution
+    const priorityCounts = {};
+    tickets.forEach(t => { priorityCounts[t.priority ?? 'Unknown'] = (priorityCounts[t.priority ?? 'Unknown'] || 0) + 1; });
 
-Your report must be grounded entirely in the ACTUAL milestone data provided. Every claim, number, and risk must come directly from that data. No generalities. No invented patterns.
+    // Issue type distribution
+    const typeCounts = {};
+    tickets.forEach(t => { typeCounts[t.issueType ?? 'Unknown'] = (typeCounts[t.issueType ?? 'Unknown'] || 0) + 1; });
+
+    // Per-assignee load and delivery analysis
+    const assigneeMap = {};
+    tickets.forEach(t => {
+      const name = t.assigneeName || 'Unassigned';
+      if (!assigneeMap[name]) assigneeMap[name] = { total: 0, done: 0, rejected: 0, blocked: 0, inProgress: 0, totalSP: 0, doneSP: 0, highPriority: 0 };
+      assigneeMap[name].total++;
+      assigneeMap[name].totalSP += Number.isFinite(t.sp) ? t.sp : 0;
+      if (isDone(t)) { assigneeMap[name].done++; assigneeMap[name].doneSP += Number.isFinite(t.sp) ? t.sp : 0; }
+      if (isRejected(t)) assigneeMap[name].rejected++;
+      if (isBlocked(t)) assigneeMap[name].blocked++;
+      if (isInProgress(t)) assigneeMap[name].inProgress++;
+      if (t.priority === 'High' || t.priority === 'Highest') assigneeMap[name].highPriority++;
+    });
+    const assigneeStats = Object.entries(assigneeMap).map(([name, s]) => ({
+      name,
+      total: s.total,
+      done: s.done,
+      donePct: s.total > 0 ? Math.round((s.done / s.total) * 100) : 0,
+      rejected: s.rejected,
+      blocked: s.blocked,
+      inProgress: s.inProgress,
+      totalSP: s.totalSP,
+      doneSP: s.doneSP,
+      highPriority: s.highPriority,
+    })).sort((a, b) => b.total - a.total);
+
+    // TL comments sample (up to 10)
+    const tlComments = tickets.filter(t => t.tlComment).slice(0, 10).map(t => `[${t.id}] ${t.tlComment}`);
+
+    // Identified risks: tickets with no SP, high priority not done, blocked, rejected
+    const highPriorityNotDone = tickets.filter(t => !isDone(t) && (t.priority === 'High' || t.priority === 'Highest'));
+    const noSpTickets = tickets.filter(t => !t.sp || !Number.isFinite(t.sp) || t.sp === 0);
+    const rejectedTickets = tickets.filter(isRejected);
+    const blockedTickets = tickets.filter(isBlocked);
+
+    // All tickets for full data (capped at 80 to stay within token budget, prioritising unfinished/risky)
+    const scoredTickets = tickets.map(t => ({
+      t,
+      score: (isRejected(t) ? 4 : 0) + (isBlocked(t) ? 4 : 0) +
+             (!isDone(t) && (t.priority === 'High' || t.priority === 'Highest') ? 3 : 0) +
+             (t.tlComment ? 2 : 0) + (t.reviewRating != null ? 1 : 0) +
+             (!isDone(t) ? 1 : 0),
+    }));
+    scoredTickets.sort((a, b) => b.score - a.score);
+    const fullTicketData = scoredTickets.slice(0, 80).map(({ t }) => ({
+      id: t.id,
+      status: t.status,
+      priority: t.priority,
+      type: t.issueType,
+      sp: t.sp ?? null,
+      assignee: t.assigneeName || 'Unassigned',
+      summary: (t.description ?? '').slice(0, 100),
+      tlComment: t.tlComment ?? null,
+      reviewRating: t.reviewRating ?? null,
+      created: t.created ? t.created.slice(0, 10) : null,
+      labels: (t.labels ?? []).join(', ') || null,
+      components: (t.components ?? []).join(', ') || null,
+    }));
+
+    const prompt = `You are a senior program director and delivery executive with 50+ years of hands-on project and portfolio management experience across enterprise, product, and engineering organizations. You have seen every pattern of delivery risk, scope drift, team imbalance, and quality failure that exists. Your analysis is the gold standard that executive stakeholders and delivery boards rely on.
+
+Your role here is to analyze this milestone in full depth — not just surface metrics. You must:
+- Identify systemic risks, not just symptom counts
+- Assess workload distribution and team balance
+- Evaluate quality signals from review ratings and TL comments
+- Spot priority misalignment and scope risk
+- Identify gaps in estimation or execution discipline
+- Provide concrete, sequenced remediation recommendations a delivery team can act on immediately
+- Ground every observation in the ACTUAL data. No invented patterns. No generalities.
 
 COMMUNICATION PRINCIPLES:
-1. Write for executive readers — concise, confident, and data-grounded. No jargon, no waffle.
-2. Name risks clearly and honestly. Pair every risk with what can be done about it.
-3. Separate delivery facts from interpretation. State the numbers, then assess their meaning.
-4. Use calm, professional language. Not alarming, not dismissive. Clarity plus direction.
-5. Acknowledge what is on track before addressing what needs attention.
-6. Recommendations must be concrete and actionable — not generic advice.
+1. Executive-grade clarity — direct, confident, and data-grounded.
+2. Pair every risk with its downstream impact if unaddressed.
+3. Acknowledge strengths before surfacing risks — do not lead with doom.
+4. Recommendations must be prioritized and sequenced (most critical first).
+5. Use calm, professional language. Not alarming, but never dismissive.
+6. If a pattern in the data suggests a deeper organizational or process gap, name it directly.
 
 DATA RULES — non-negotiable:
-- Use ONLY real values: real counts, real percentages, real ticket IDs where relevant.
-- NEVER write placeholder text like "X tickets", "Y%", "N items", "e.g.", "[number]".
+- Use ONLY real values from the data below. Real names, real counts, real percentages.
+- NEVER write "X tickets", "Y%", "[number]", "N items", or "e.g." in your output.
 - Do NOT use markdown code fences. Return raw JSON only.
 - Each string in arrays must be ONE complete, standalone sentence.
-- Do NOT prefix items with labels like "RISK 1:", "ACTION:", etc.
+- Do NOT prefix items with labels like "RISK 1:", "ACTION:", "PRIMARY:" etc.
 
 MILESTONE: "${milestoneName}"
 
-MILESTONE METRICS:
-- Total issues: ${totalCount} | Done: ${doneCount} (${completionPct}%) | Story Points: ${doneSP}/${totalSP} (${totalSP > 0 ? Math.round((doneSP / totalSP) * 100) : 0}%)
-- In Progress: ${Object.entries(statusCounts).filter(([k]) => k.toLowerCase().includes('progress') || k.toLowerCase().includes('review')).reduce((s, [, v]) => s + v, 0)}
+CORE METRICS:
+- Total issues: ${totalCount} | Done: ${doneCount} (${completionPct}%) | In Progress: ${inProgressCount}
+- Story Points: ${doneSP}/${totalSP} (${totalSP > 0 ? Math.round((doneSP / totalSP) * 100) : 0}%)
 - Rejected/Declined: ${rejectedCount} | Blocked: ${blockedCount}
 - Unassigned issues: ${unassignedCount} | Issues without SP estimate: ${noSpCount}
-${avgRating != null ? `- Avg review rating: ${avgRating}/5` : ''}
+${avgRating != null ? `- Avg review rating: ${avgRating}/5 (from ${ratings.length} rated tickets)` : '- No review ratings recorded'}
 
-STATUS BREAKDOWN:
+STATUS DISTRIBUTION:
 ${Object.entries(statusCounts).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
 
-SAMPLE ISSUES (up to 20):
-${sampleTickets}
+PRIORITY DISTRIBUTION:
+${Object.entries(priorityCounts).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
 
-Determine riskLevel as: "Green" if completion >= 80%, "Amber" if 50-79%, "Red" if below 50%.
+ISSUE TYPE DISTRIBUTION:
+${Object.entries(typeCounts).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
+
+TEAM LOAD & DELIVERY BY ASSIGNEE:
+${assigneeStats.map(a => `  ${a.name}: ${a.done}/${a.total} done (${a.donePct}%) | ${a.doneSP}/${a.totalSP} SP | ${a.inProgress} in-progress | ${a.rejected} rejected | ${a.blocked} blocked | ${a.highPriority} high-priority`).join('\n')}
+
+HIGH PRIORITY NOT DONE (${highPriorityNotDone.length}):
+${highPriorityNotDone.slice(0, 15).map(t => `  [${t.id}] ${t.status} | ${t.priority} | ${t.assigneeName || 'Unassigned'} | ${(t.description ?? '').slice(0, 80)}`).join('\n') || '  None'}
+
+BLOCKED TICKETS (${blockedTickets.length}):
+${blockedTickets.slice(0, 10).map(t => `  [${t.id}] ${t.status} | ${t.assigneeName || 'Unassigned'} | ${(t.description ?? '').slice(0, 80)}`).join('\n') || '  None'}
+
+REJECTED/DECLINED TICKETS (${rejectedTickets.length}):
+${rejectedTickets.slice(0, 10).map(t => `  [${t.id}] ${t.assigneeName || 'Unassigned'} | ${(t.description ?? '').slice(0, 80)}`).join('\n') || '  None'}
+
+UNESTIMATED TICKETS — NO STORY POINTS (${noSpTickets.length}):
+${noSpTickets.slice(0, 10).map(t => `  [${t.id}] ${t.status} | ${t.priority} | ${(t.description ?? '').slice(0, 60)}`).join('\n') || '  None'}
+
+${tlComments.length > 0 ? `TL COMMENTS / QUALITY FEEDBACK:\n${tlComments.map(c => `  ${c}`).join('\n')}\n` : ''}
+FULL TICKET DATA (${fullTicketData.length} highest-priority tickets):
+${JSON.stringify(fullTicketData, null, 0)}
+
+Riskevel rules: "Green" = completion >= 80%, "Amber" = 50–79%, "Red" = below 50% OR any blocked/rejected count > 10% of total.
 
 Return ONLY valid raw JSON (no code fences):
 {
-  "executiveSummary": "2-3 sentence paragraph: current status, completion percentage, confidence in delivery.",
+  "executiveSummary": "2-3 sentence executive paragraph: current delivery status, confidence level, and overall health.",
   "riskLevel": "Green" | "Amber" | "Red",
-  "keyRisks": ["3-5 sentences, each a distinct risk grounded in the data"],
-  "recommendations": ["3-5 sentences, each a distinct, concrete next action"],
-  "closingNote": "1 sentence: forward-looking, directional, confidence-appropriate for current riskLevel."
+  "keyRisks": ["4-6 sentences, each a distinct risk grounded in the data with downstream impact if unaddressed"],
+  "recommendations": ["4-6 sentences, each a concrete, sequenced, actionable next step — most critical first"],
+  "teamAnalysis": "2-3 sentences assessing team load distribution, delivery spread, and any imbalance or concentration risk visible in the data.",
+  "qualityAssessment": "2-3 sentences on quality signals: review ratings, rejection rate, TL feedback patterns, and what they indicate about delivery discipline.",
+  "scopeAndEstimationHealth": "1-2 sentences on estimation completeness (unestimated tickets), scope definition quality, and any gaps that create planning risk.",
+  "closingNote": "1 forward-looking sentence calibrated to the riskLevel — directional and confidence-appropriate for executive readers."
 }`;
 
     const response = await fetch(`${BACKEND_URL}/api/retrospective`, {
@@ -412,6 +498,9 @@ Return ONLY valid raw JSON (no code fences):
       riskLevel: parsed.riskLevel,
       keyRisks: parsed.keyRisks ?? [],
       recommendations: parsed.recommendations ?? [],
+      teamAnalysis: parsed.teamAnalysis ?? null,
+      qualityAssessment: parsed.qualityAssessment ?? null,
+      scopeAndEstimationHealth: parsed.scopeAndEstimationHealth ?? null,
       closingNote: parsed.closingNote ?? '',
     };
   } catch (err) {

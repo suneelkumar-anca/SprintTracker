@@ -11,7 +11,17 @@ export function useCombobox({ options, value, onChange, placeholder, loading }) 
 
   const selectedLabel = options.find((o) => String(o.value) === String(value))?.label ?? "";
   const inputVal = open ? query : selectedLabel;
-  const filtered = query.trim() ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase())) : options;
+  const filtered = (() => {
+    const raw = query.trim();
+    if (!raw) return options;
+    // Extract Jira key from a pasted URL like https://…/browse/TR-32888
+    const urlMatch = raw.match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i);
+    const q = (urlMatch ? urlMatch[1] : raw).toLowerCase();
+    return options.filter((o) =>
+      o.label.toLowerCase().includes(q) ||
+      (o.description && o.description.toLowerCase().includes(q))
+    );
+  })();
   const active = !!value;
 
   const openDropdown = () => { if (!loading) { setOpen(true); setQuery(""); setFocusedIndex(-1); } };

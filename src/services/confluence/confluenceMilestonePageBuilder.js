@@ -29,26 +29,77 @@ function ragColor(pct) {
 
 function ragBadge(pct) {
   const r = ragColor(pct);
-  return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;background:${r.bg};border:1px solid ${r.border};color:${r.text};font-weight:700;font-size:12px;">${r.label}</span>`;
+  const colorMap = { "On Track": "Green", "At Risk": "Yellow", "Off Track": "Red" };
+  return `<ac:structured-macro ac:name="status"><ac:parameter ac:name="subtle">false</ac:parameter><ac:parameter ac:name="title">${r.label}</ac:parameter><ac:parameter ac:name="color">${colorMap[r.label] ?? "Yellow"}</ac:parameter></ac:structured-macro>`;
 }
 
 function riskLevelBadge(level) {
-  const colors = {
-    Green: { bg: "#e3fcef", border: "#006644", text: "#006644" },
-    Amber: { bg: "#fffae5", border: "#c67c00", text: "#c67c00" },
-    Red:   { bg: "#ffebe6", border: "#c5203e", text: "#c5203e" },
-  };
-  const c = colors[level] ?? colors.Amber;
-  return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${c.bg};border:1px solid ${c.border};color:${c.text};font-weight:700;font-size:11px;">${level}</span>`;
+  const colorMap = { Green: "Green", Amber: "Yellow", Red: "Red" };
+  return `<ac:structured-macro ac:name="status"><ac:parameter ac:name="subtle">false</ac:parameter><ac:parameter ac:name="title">${level}</ac:parameter><ac:parameter ac:name="color">${colorMap[level] ?? "Yellow"}</ac:parameter></ac:structured-macro>`;
 }
 
-function bucketStatusColor(label) {
-  const s = label.toLowerCase();
-  if (s.includes("done") || s.includes("closed"))           return "#006644";
-  if (s.includes("progress") || s.includes("review"))       return "#0052cc";
-  if (s.includes("rejected") || s.includes("declined"))     return "#c5203e";
-  if (s.includes("blocked"))                                 return "#c5203e";
-  return "#6a737d";
+/** Wrap content in a Confluence panel macro */
+function panel(title, borderColor, titleBGColor, bgColor, body) {
+  return `<ac:structured-macro ac:name="panel">` +
+    `<ac:parameter ac:name="title">${escapeHtml(title)}</ac:parameter>` +
+    `<ac:parameter ac:name="borderColor">${borderColor}</ac:parameter>` +
+    `<ac:parameter ac:name="titleBGColor">${titleBGColor}</ac:parameter>` +
+    `<ac:parameter ac:name="bgColor">${bgColor}</ac:parameter>` +
+    `<ac:rich-text-body>${body}</ac:rich-text-body>` +
+    `</ac:structured-macro>`;
+}
+
+/** Confluence built-in callout macros: tip (green), note (yellow), info (blue), warning (red) */
+function callout(type, title, body) {
+  return `<ac:structured-macro ac:name="${type}">` +
+    (title ? `<ac:parameter ac:name="title">${escapeHtml(title)}</ac:parameter>` : "") +
+    `<ac:rich-text-body>${body}</ac:rich-text-body>` +
+    `</ac:structured-macro>`;
+}
+
+function getStatusMacro(status) {
+  const statusMap = {
+    "Done":        { color: "Green",  title: "Done" },
+    "Closed":      { color: "Green",  title: "Closed" },
+    "In Progress": { color: "Blue",   title: "In Progress" },
+    "In Review":   { color: "Blue",   title: "In Review" },
+    "Feedback":    { color: "Yellow", title: "Feedback" },
+    "Testing":     { color: "Yellow", title: "Testing" },
+    "UAT":         { color: "Yellow", title: "UAT" },
+    "To Do":       { color: "Grey",   title: "To Do" },
+    "Open":        { color: "Grey",   title: "Open" },
+    "Backlog":     { color: "Grey",   title: "Backlog" },
+    "Rejected":    { color: "Red",    title: "Rejected" },
+    "Declined":    { color: "Red",    title: "Declined" },
+    "Blocked":     { color: "Red",    title: "Blocked" },
+  };
+  const cfg = statusMap[status] ?? { color: "Grey", title: status || "Unknown" };
+  return `<ac:structured-macro ac:name="status"><ac:parameter ac:name="subtle">false</ac:parameter><ac:parameter ac:name="title">${escapeHtml(cfg.title)}</ac:parameter><ac:parameter ac:name="color">${cfg.color}</ac:parameter></ac:structured-macro>`;
+}
+
+function getPriorityMacro(priority) {
+  const map = {
+    "Highest": { color: "Red",    title: "Highest" },
+    "High":    { color: "Yellow", title: "High" },
+    "Medium":  { color: "Yellow", title: "Medium" },
+    "Low":     { color: "Green",  title: "Low" },
+    "Lowest":  { color: "Blue",   title: "Lowest" },
+  };
+  const cfg = map[priority] ?? { color: "Grey", title: priority || "Unset" };
+  return `<ac:structured-macro ac:name="status"><ac:parameter ac:name="subtle">true</ac:parameter><ac:parameter ac:name="title">${escapeHtml(cfg.title)}</ac:parameter><ac:parameter ac:name="color">${cfg.color}</ac:parameter></ac:structured-macro>`;
+}
+
+function getTypeMacro(type) {
+  const map = {
+    "Story":    { color: "Blue",   title: "Story" },
+    "Task":     { color: "Blue",   title: "Task" },
+    "Bug":      { color: "Red",    title: "Bug" },
+    "Epic":     { color: "Purple", title: "Epic" },
+    "Sub-task": { color: "Green",  title: "Sub-task" },
+    "Subtask":  { color: "Green",  title: "Subtask" },
+  };
+  const cfg = map[type] ?? { color: "Grey", title: type || "Unset" };
+  return `<ac:structured-macro ac:name="status"><ac:parameter ac:name="subtle">true</ac:parameter><ac:parameter ac:name="title">${escapeHtml(cfg.title)}</ac:parameter><ac:parameter ac:name="color">${cfg.color}</ac:parameter></ac:structured-macro>`;
 }
 
 function buildInlinePRSummary(prs) {
@@ -86,8 +137,7 @@ async function buildPersonTable(personTickets, personName) {
     .reduce((sum, t) => sum + (t.sp || 0), 0);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  let html = `<h3 style="margin-top:20px;">${escapeHtml(personName)}</h3>`;
-  html += `<table style="width:100%;border-collapse:collapse;margin:6px 0;"><tbody><tr>
+  let html = `<table style="width:100%;border-collapse:collapse;margin:6px 0;"><tbody><tr>
     <td style="padding:4px 8px;"><strong>Assigned:</strong> ${total}</td>
     <td style="padding:4px 8px;"><strong>Done:</strong> ${done}/${total} (${pct}%)</td>
     <td style="padding:4px 8px;"><strong>Story Points:</strong> ${doneSP}/${totalSP}</td>
@@ -95,8 +145,8 @@ async function buildPersonTable(personTickets, personName) {
 
   html += `<table style="width:100%;border-collapse:collapse;" border="1">
     <colgroup>
-      <col style="width:8%;"/><col style="width:60%;"/><col style="width:7%;"/>
-      <col style="width:13%;"/><col style="width:12%;"/>
+      <col style="width:8%;"/><col style="width:52%;"/><col style="width:7%;"/>
+      <col style="width:15%;"/><col style="width:18%;"/>
     </colgroup>
     <tbody><tr>
       <th style="padding:6px 8px;background:#f5f5f5;"><strong>Ticket</strong></th>
@@ -119,16 +169,15 @@ async function buildPersonTable(personTickets, personName) {
       }
     } catch (_) { /* continue without PR data */ }
 
-    const sc = bucketStatusColor(t.status ?? "");
     html += `<tr>
       <td style="padding:6px 8px;word-wrap:break-word;">${ticketLink}</td>
       <td style="padding:6px 8px;word-wrap:break-word;">${summaryHtml}</td>
-      <td style="padding:6px 8px;text-align:center;">${t.sp != null ? escapeHtml(String(t.sp)) : ""}</td>
-      <td style="padding:6px 8px;color:${sc};font-weight:600;">${escapeHtml(t.status || "")}</td>
-      <td style="padding:6px 8px;word-wrap:break-word;">${escapeHtml(t.priority || "")}<br/>${escapeHtml(t.issueType || "")}</td>
+      <td style="padding:6px 8px;text-align:center;">${(t.sp != null && t.sp !== "") ? escapeHtml(String(t.sp)) : "&ndash;"}</td>
+      <td style="padding:6px 8px;">${getStatusMacro(t.status || "")}</td>
+      <td style="padding:6px 8px;">${getPriorityMacro(t.priority || "")}${t.issueType ? `<div style="margin-top:4px;">${getTypeMacro(t.issueType)}</div>` : ""}</td>
     </tr>`;
   }
-  html += `</tbody></table><hr/>`;
+  html += `</tbody></table>`;
   return html;
 }
 
@@ -167,126 +216,176 @@ export async function buildMilestonePage(tickets, milestoneName, deadlineDate, r
   }, null);
 
   let daysInfo = "";
+  let daysInfoPlain = "";
   if (deadlineDate) {
     const diff = Math.round((new Date(deadlineDate) - now) / 86400000);
     daysInfo = diff > 0
       ? `<span style="color:#006644;">${diff} days remaining</span>`
       : `<span style="color:#c5203e;">${Math.abs(diff)} days overdue</span>`;
+    daysInfoPlain = diff > 0 ? `${diff} days remaining` : `${Math.abs(diff)} days overdue`;
   }
 
   // --- AI executive summary (graceful degradation) ---
   const aiData = await generateAIMilestoneSummary(tickets, milestoneName).catch(() => null);
 
   // ==========================================================================
-  // Section 1: Header
+  // Section 1: Header + TOC
   // ==========================================================================
-  let html = `<h2 style="margin-bottom:4px;">${escapeHtml(milestoneName)}</h2>`;
-  html += `<p style="color:#6a737d;font-size:12px;margin-top:0;">Generated: ${timestamp} &nbsp;|&nbsp; Health: ${ragBadge(completionPct)}</p>`;
+  let html = `<h1>${escapeHtml(milestoneName)}</h1>`;
+  html += `<p>Generated: <strong>${timestamp}</strong> &nbsp;&nbsp; Health: ${ragBadge(completionPct)} &nbsp;&nbsp; Completion: <strong>${completionPct}%</strong> (${doneCount}/${totalCount} tickets)</p>`;
+  // Table of Contents
+  html += `<ac:structured-macro ac:name="toc">` +
+    `<ac:parameter ac:name="minLevel">2</ac:parameter>` +
+    `<ac:parameter ac:name="maxLevel">3</ac:parameter>` +
+    `<ac:parameter ac:name="style">disc</ac:parameter>` +
+    `</ac:structured-macro>`;
   html += `<hr/>`;
 
   // ==========================================================================
-  // Section 2: AI Executive Summary
+  // Section 2: AI Executive Assessment
   // ==========================================================================
   if (aiData) {
-    const panelBg     = aiData.riskLevel === "Green" ? "#e3fcef" : aiData.riskLevel === "Red" ? "#ffebe6" : "#fffae5";
-    const panelBorder = aiData.riskLevel === "Green" ? "#006644" : aiData.riskLevel === "Red" ? "#c5203e"  : "#c67c00";
+    const calloutType = aiData.riskLevel === "Green" ? "tip" : aiData.riskLevel === "Red" ? "warning" : "note";
+    const calloutTitle = `AI Executive Assessment — ${aiData.riskLevel === "Green" ? "On Track" : aiData.riskLevel === "Red" ? "Critical" : "At Risk"}`;
 
-    html += `<div style="background:${panelBg};border-left:4px solid ${panelBorder};padding:14px 16px;border-radius:4px;margin-bottom:20px;">`;
-    html += `<h3 style="margin:0 0 8px 0;">AI Executive Assessment &nbsp;${riskLevelBadge(aiData.riskLevel)}</h3>`;
-    html += `<p style="margin:0 0 12px 0;font-size:13px;">${escapeHtml(aiData.executiveSummary)}</p>`;
+    let aiBody = `<p>${escapeHtml(aiData.executiveSummary)}</p>`;
+    aiBody += `<p><strong>Risk Level:</strong> ${riskLevelBadge(aiData.riskLevel)}</p>`;
 
-    if (aiData.keyRisks && aiData.keyRisks.length > 0) {
-      html += `<p style="font-weight:700;margin:10px 0 4px 0;font-size:12px;">Key Risks</p><ul style="margin:0 0 10px 0;padding-left:20px;">`;
-      aiData.keyRisks.forEach(r => { html += `<li style="font-size:12px;margin-bottom:4px;">${escapeHtml(r)}</li>`; });
-      html += `</ul>`;
+    if (aiData.keyRisks?.length > 0) {
+      aiBody += `<h4>🚨 Key Risks</h4><ul>`;
+      aiData.keyRisks.forEach(r => { aiBody += `<li>${escapeHtml(r)}</li>`; });
+      aiBody += `</ul>`;
     }
 
-    if (aiData.recommendations && aiData.recommendations.length > 0) {
-      html += `<p style="font-weight:700;margin:10px 0 4px 0;font-size:12px;">Recommendations</p><ol style="margin:0 0 10px 0;padding-left:20px;">`;
-      aiData.recommendations.forEach(r => { html += `<li style="font-size:12px;margin-bottom:4px;">${escapeHtml(r)}</li>`; });
-      html += `</ol>`;
+    if (aiData.recommendations?.length > 0) {
+      aiBody += `<h4>✅ Recommendations</h4><ol>`;
+      aiData.recommendations.forEach(r => { aiBody += `<li>${escapeHtml(r)}</li>`; });
+      aiBody += `</ol>`;
+    }
+
+    if (aiData.teamAnalysis || aiData.qualityAssessment || aiData.scopeAndEstimationHealth) {
+      // Two-column layout for the three deep-analysis sections
+      aiBody += `<ac:layout><ac:layout-section ac:type="two_equal">`;
+
+      aiBody += `<ac:layout-cell>`;
+      if (aiData.teamAnalysis) {
+        aiBody += panel("👥 Team Load & Balance", "#0052cc", "#e3eeff", "#f5f8ff",
+          `<p>${escapeHtml(aiData.teamAnalysis)}</p>`);
+      }
+      if (aiData.scopeAndEstimationHealth) {
+        aiBody += panel("📐 Scope & Estimation Health", "#c67c00", "#fffae5", "#fffdf0",
+          `<p>${escapeHtml(aiData.scopeAndEstimationHealth)}</p>`);
+      }
+      aiBody += `</ac:layout-cell>`;
+
+      aiBody += `<ac:layout-cell>`;
+      if (aiData.qualityAssessment) {
+        aiBody += panel("🔍 Quality Assessment", "#006644", "#e3fcef", "#f0faf2",
+          `<p>${escapeHtml(aiData.qualityAssessment)}</p>`);
+      }
+      aiBody += `</ac:layout-cell>`;
+
+      aiBody += `</ac:layout-section></ac:layout>`;
     }
 
     if (aiData.closingNote) {
-      html += `<p style="font-size:12px;font-style:italic;margin:8px 0 0 0;color:#42526e;">${escapeHtml(aiData.closingNote)}</p>`;
+      aiBody += `<p><em>${escapeHtml(aiData.closingNote)}</em></p>`;
     }
-    html += `</div>`;
+
+    html += callout(calloutType, calloutTitle, aiBody);
   }
 
   // ==========================================================================
   // Section 3: Health Dashboard
   // ==========================================================================
-  html += `<h3>Health Dashboard</h3>`;
-  html += `<table style="width:100%;border-collapse:collapse;" border="1"><tbody>`;
+  html += `<h2>📊 Health Dashboard</h2>`;
 
+  // Two-column layout: left = key metrics table, right = quick stats panel
+  const spPct = totalSP > 0 ? Math.round((doneSP / totalSP) * 100) : 0;
+  const quickStats =
+    panel("🎯 Delivery Snapshot", "#0052cc", "#e3eeff", "#f5f8ff",
+      `<table><tbody>` +
+      `<tr><td><strong>Tickets Done</strong></td><td>${doneCount} / ${totalCount} &nbsp;(${completionPct}%)</td></tr>` +
+      `<tr><td><strong>Story Points</strong></td><td>${doneSP} / ${totalSP} &nbsp;(${spPct}%)</td></tr>` +
+      `<tr><td><strong>Team Size</strong></td><td>${uniqueAssignees} member${uniqueAssignees !== 1 ? "s" : ""}</td></tr>` +
+      `<tr><td><strong>Rejected</strong></td><td>${rejectedCount > 0 ? `<ac:structured-macro ac:name="status"><ac:parameter ac:name="subtle">false</ac:parameter><ac:parameter ac:name="title">${rejectedCount} Rejected</ac:parameter><ac:parameter ac:name="color">Red</ac:parameter></ac:structured-macro>` : "None"}</td></tr>` +
+      `<tr><td><strong>Blocked</strong></td><td>${blockedCount > 0 ? `<ac:structured-macro ac:name="status"><ac:parameter ac:name="subtle">false</ac:parameter><ac:parameter ac:name="title">${blockedCount} Blocked</ac:parameter><ac:parameter ac:name="color">Red</ac:parameter></ac:structured-macro>` : "None"}</td></tr>` +
+      (avgRating != null ? `<tr><td><strong>Avg Review Rating</strong></td><td>${avgRating} / 5 <em style="color:#6a737d;">(${ratings.length} rated)</em></td></tr>` : "") +
+      `</tbody></table>`
+    );
+
+  html += `<ac:layout><ac:layout-section ac:type="two_equal">`;
+  html += `<ac:layout-cell>`;
+  html += `<table style="width:100%;border-collapse:collapse;" border="1"><tbody>`;
   const dashRows = [
     ["Milestone",    escapeHtml(milestoneName)],
     ["Health Status", ragBadge(completionPct)],
     ["Completion",   `${doneCount} / ${totalCount} tickets &nbsp;<strong>(${completionPct}%)</strong>`],
-    ["Story Points", `${doneSP} / ${totalSP} SP &nbsp;<strong>(${totalSP > 0 ? Math.round((doneSP / totalSP) * 100) : 0}%)</strong>`],
+    ["Story Points", `${doneSP} / ${totalSP} SP &nbsp;<strong>(${spPct}%)</strong>`],
     ["Start Date",   fmt(earliestStart) || "&ndash;"],
     ["Target End",   deadlineDate ? `${fmt(deadlineDate)} &nbsp;${daysInfo}` : "&ndash;"],
     ["Review Date",  reviewDate ? fmt(reviewDate) : "&ndash;"],
     ["Team Size",    `${uniqueAssignees} member${uniqueAssignees !== 1 ? "s" : ""}`],
     ["Generated",    timestamp],
   ];
-
   dashRows.forEach(([label, value]) => {
     html += `<tr>
-      <td style="width:28%;padding:6px 10px;background:#f5f5f5;"><strong>${label}</strong></td>
+      <td style="width:38%;padding:6px 10px;background:#f5f5f5;"><strong>${label}</strong></td>
       <td style="padding:6px 10px;">${value}</td>
     </tr>`;
   });
-  html += `</tbody></table><hr/>`;
+  html += `</tbody></table>`;
+  html += `</ac:layout-cell>`;
+  html += `<ac:layout-cell>${quickStats}</ac:layout-cell>`;
+  html += `</ac:layout-section></ac:layout><hr/>`;
 
   // ==========================================================================
   // Section 4: Status Breakdown
   // ==========================================================================
-  html += `<h3>Status Breakdown</h3>`;
+  html += `<h2>📋 Status Breakdown</h2>`;
   html += `<table style="width:100%;border-collapse:collapse;" border="1">
     <tbody><tr>
-      <th style="padding:6px 10px;background:#f5f5f5;text-align:left;width:35%;"><strong>Status</strong></th>
-      <th style="padding:6px 10px;background:#f5f5f5;text-align:center;"><strong>Count</strong></th>
+      <th style="padding:6px 10px;background:#f5f5f5;text-align:left;width:28%;"><strong>Status</strong></th>
+      <th style="padding:6px 10px;background:#f5f5f5;text-align:center;"><strong>Tickets</strong></th>
       <th style="padding:6px 10px;background:#f5f5f5;text-align:center;"><strong>Story Points</strong></th>
       <th style="padding:6px 10px;background:#f5f5f5;text-align:center;"><strong>% of Total</strong></th>
+      <th style="padding:6px 10px;background:#f5f5f5;text-align:left;"><strong>Assignees</strong></th>
     </tr>`;
 
-  const buckets = [
-    { label: "Done / Closed",       match: t => { const s = (t.status ?? "").toLowerCase(); return s === "done" || s === "closed"; } },
-    { label: "In Progress",         match: t => { const s = (t.status ?? "").toLowerCase(); return s.includes("progress") || s.includes("review") || s.includes("testing") || s.includes("uat"); } },
-    { label: "To Do / Open",        match: t => { const s = (t.status ?? "").toLowerCase(); return s === "to do" || s === "open" || s === "backlog" || s === "new" || s === "created"; } },
-    { label: "Rejected / Declined", match: t => { const s = (t.status ?? "").toLowerCase(); return s === "rejected" || s === "declined"; } },
-    { label: "Blocked",             match: t => { const s = (t.status ?? "").toLowerCase(); return s.includes("blocked") || s.includes("impediment"); } },
+  // Individual status buckets: collect every unique status from actual tickets,
+  // sorted by a logical display order (done → in-flight → open → terminal).
+  const STATUS_ORDER = [
+    "Done", "Closed",
+    "In Progress", "In Review", "Feedback", "Testing", "UAT",
+    "To Do", "Open", "Backlog", "New", "Created",
+    "Blocked",
+    "Rejected", "Declined",
   ];
+  const statusOrderIndex = (s) => {
+    const i = STATUS_ORDER.findIndex(o => o.toLowerCase() === s.toLowerCase());
+    return i === -1 ? STATUS_ORDER.length : i;
+  };
+  const uniqueStatuses = [...new Set(tickets.map(t => t.status).filter(Boolean))].sort(
+    (a, b) => statusOrderIndex(a) - statusOrderIndex(b) || a.localeCompare(b)
+  );
 
-  const matchedIds = new Set();
-  const bucketRows = buckets.map(b => {
-    const matched = tickets.filter(t => b.match(t) && !matchedIds.has(t.id));
-    matched.forEach(t => matchedIds.add(t.id));
+  const sbRows = uniqueStatuses.map(status => {
+    const matched = tickets.filter(t => (t.status ?? "") === status);
     const count = matched.length;
     const sp = matched.reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
     const pct = totalCount > 0 ? Math.round((count / totalCount) * 100) : 0;
-    return { label: b.label, count, sp, pct };
+    const assignees = [...new Set(matched.map(t => t.assigneeName || "Unassigned"))].sort();
+    return { label: status, count, sp, pct, assignees };
   });
 
-  const otherTickets = tickets.filter(t => !matchedIds.has(t.id));
-  if (otherTickets.length > 0) {
-    bucketRows.push({
-      label: "Other",
-      count: otherTickets.length,
-      sp: otherTickets.reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0),
-      pct: totalCount > 0 ? Math.round((otherTickets.length / totalCount) * 100) : 0,
-    });
-  }
-
-  bucketRows.forEach(({ label, count, sp, pct }) => {
+  sbRows.forEach(({ label, count, sp, pct, assignees }) => {
     if (count === 0) return;
-    const sc = bucketStatusColor(label);
     html += `<tr>
-      <td style="padding:6px 10px;font-weight:600;color:${sc};">${label}</td>
-      <td style="padding:6px 10px;text-align:center;">${count}</td>
-      <td style="padding:6px 10px;text-align:center;">${sp}</td>
+      <td style="padding:6px 10px;">${getStatusMacro(label)}</td>
+      <td style="padding:6px 10px;text-align:center;font-weight:600;">${count}</td>
+      <td style="padding:6px 10px;text-align:center;">${sp > 0 ? sp : "&ndash;"}</td>
       <td style="padding:6px 10px;text-align:center;">${pct}%</td>
+      <td style="padding:6px 10px;font-size:11px;color:#42526e;">${escapeHtml(assignees.slice(0, 5).join(", ")) + (assignees.length > 5 ? " +" + (assignees.length - 5) + " more" : "")}</td>
     </tr>`;
   });
   html += `</tbody></table><hr/>`;
@@ -296,46 +395,29 @@ export async function buildMilestonePage(tickets, milestoneName, deadlineDate, r
   // ==========================================================================
   const hasQuality = avgRating != null || rejectedCount > 0 || unassigned > 0 || noSp > 0 || blockedCount > 0;
   if (hasQuality) {
-    html += `<h3>Quality Signals</h3>`;
-    html += `<table style="width:100%;border-collapse:collapse;" border="1"><tbody>`;
+    html += `<h2>⚠️ Quality Signals</h2>`;
+    const qualityRows = [];
+    if (avgRating != null) qualityRows.push(["Avg Review Rating", `${avgRating} / 5 &nbsp;<em>(${ratings.length} rated)</em>`]);
+    if (rejectedCount > 0) qualityRows.push(["Rejected / Declined", `${getStatusMacro("Rejected")} &nbsp;<strong>${rejectedCount}</strong> issues &nbsp;(${Math.round((rejectedCount / totalCount) * 100)}%)`]);
+    if (blockedCount  > 0) qualityRows.push(["Blocked Issues",      `${getStatusMacro("Blocked")} &nbsp;<strong>${blockedCount}</strong>`]);
+    if (unassigned    > 0) qualityRows.push(["Unassigned Issues",   `<strong style="color:#c67c00;">${unassigned}</strong>`]);
+    if (noSp          > 0) qualityRows.push(["Issues Without SP Estimate", `<strong style="color:#c67c00;">${noSp}</strong>`]);
 
-    if (avgRating != null) {
-      html += `<tr>
-        <td style="width:35%;padding:6px 10px;background:#f5f5f5;"><strong>Avg Review Rating</strong></td>
-        <td style="padding:6px 10px;">${avgRating} / 5 &nbsp;<span style="color:#6a737d;font-size:11px;">(${ratings.length} rated)</span></td>
-      </tr>`;
-    }
-    if (rejectedCount > 0) {
-      html += `<tr>
-        <td style="width:35%;padding:6px 10px;background:#f5f5f5;"><strong>Rejected / Declined</strong></td>
-        <td style="padding:6px 10px;color:#c5203e;">${rejectedCount} issues (${Math.round((rejectedCount / totalCount) * 100)}%)</td>
-      </tr>`;
-    }
-    if (blockedCount > 0) {
-      html += `<tr>
-        <td style="width:35%;padding:6px 10px;background:#f5f5f5;"><strong>Blocked Issues</strong></td>
-        <td style="padding:6px 10px;color:#c5203e;">${blockedCount}</td>
-      </tr>`;
-    }
-    if (unassigned > 0) {
-      html += `<tr>
-        <td style="width:35%;padding:6px 10px;background:#f5f5f5;"><strong>Unassigned Issues</strong></td>
-        <td style="padding:6px 10px;color:#c67c00;">${unassigned}</td>
-      </tr>`;
-    }
-    if (noSp > 0) {
-      html += `<tr>
-        <td style="width:35%;padding:6px 10px;background:#f5f5f5;"><strong>Issues Without SP Estimate</strong></td>
-        <td style="padding:6px 10px;color:#c67c00;">${noSp}</td>
-      </tr>`;
-    }
-    html += `</tbody></table><hr/>`;
+    const qualityTableBody = `<table style="width:100%;border-collapse:collapse;" border="1"><tbody>` +
+      qualityRows.map(([l, v]) => `<tr><td style="width:38%;padding:6px 10px;background:#f5f5f5;"><strong>${l}</strong></td><td style="padding:6px 10px;">${v}</td></tr>`).join("") +
+      `</tbody></table>`;
+
+    const hasWarnings = rejectedCount > 0 || blockedCount > 0;
+    html += hasWarnings
+      ? callout("warning", "Quality signals require attention", qualityTableBody)
+      : callout("note", "Quality signals", qualityTableBody);
+    html += `<hr/>`;
   }
 
   // ==========================================================================
-  // Section 6: Per-assignee detail tables
+  // Section 6: Per-assignee detail tables (expand macro per person)
   // ==========================================================================
-  html += `<h3>Team Breakdown</h3>`;
+  html += `<h2>👥 Team Breakdown</h2>`;
   const groups = groupByAssignee(tickets);
   const sortedAssignees = Object.keys(groups).sort((a, b) => {
     if (a === "Unassigned") return 1;
@@ -344,7 +426,17 @@ export async function buildMilestonePage(tickets, milestoneName, deadlineDate, r
   });
 
   for (const assignee of sortedAssignees) {
-    html += await buildPersonTable(groups[assignee], assignee);
+    const assigneeTickets = groups[assignee];
+    const aDone = assigneeTickets.filter(t => { const s = (t.status ?? "").toLowerCase(); return s === "done" || s === "closed"; }).length;
+    const aTotalSP = assigneeTickets.reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
+    const aDoneSP = assigneeTickets.filter(t => { const s = (t.status ?? "").toLowerCase(); return s === "done" || s === "closed"; }).reduce((sum, t) => sum + (Number.isFinite(t.sp) ? t.sp : 0), 0);
+    const expandTitle = `👤 ${assignee}  •  ${aDone}/${assigneeTickets.length} tickets  •  ${aDoneSP}/${aTotalSP} SP`;
+    const tableBody = await buildPersonTable(assigneeTickets, assignee);
+    html +=
+      `<ac:structured-macro ac:name="expand">` +
+      `<ac:parameter ac:name="title">${escapeHtml(expandTitle)}</ac:parameter>` +
+      `<ac:rich-text-body>${tableBody}</ac:rich-text-body>` +
+      `</ac:structured-macro>`;
   }
 
   return html;
