@@ -26,6 +26,8 @@ export function useBoardLabels(projectLocation = null) {
   const [selectedGlobalEpicName, setSelectedGlobalEpicName] = useState("");
   // Ref to guard effects from clearing state while global epic fetch is in-flight
   const globalEpicActiveRef = useRef(false);
+  // Ref so selectGlobalEpic always sees the latest boards without being recreated
+  const boardsRef = useRef([]);
 
   // Detect story points field on mount
   useEffect(() => {
@@ -44,10 +46,12 @@ export function useBoardLabels(projectLocation = null) {
         
         if (!mounted) return;
         setBoards(boardList);
+        boardsRef.current = boardList;
       } catch (err) {
         if (mounted) {
           setError(err.message || "Failed to fetch boards");
           setBoards([]);
+          boardsRef.current = [];
         }
       } finally {
         if (mounted) setLoading(false);
@@ -179,7 +183,7 @@ export function useBoardLabels(projectLocation = null) {
     setLoading(true);
     setError(null);
     try {
-      const rawIssues = await fetchIssuesByEpicGlobal(epicKey, epicId, boards.map(b => String(b.id)));
+      const rawIssues = await fetchIssuesByEpicGlobal(epicKey, epicId, boardsRef.current.map(b => String(b.id)));
       const mapped = rawIssues.map(mapIssue);
       const labelSet = new Set();
       for (const issue of rawIssues) {

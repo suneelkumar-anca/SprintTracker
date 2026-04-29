@@ -527,26 +527,9 @@ export async function fetchIssuesByEpicGlobal(epicKey, epicId = null, fallbackBo
   if (!epicKey) return [];
   const fields = buildIssueFields(false);
 
-  // ── Strategy 1: Classic "Epic Link" JQL ──────────────────────────────────────
-  try {
-    const issues = await paginateIssues(
-      (s, max) => `/rest/api/3/search?jql=${encodeURIComponent(`"Epic Link" = ${epicKey} ORDER BY created DESC`)}&fields=${fields}&maxResults=${max}&startAt=${s}`
-    );
-    if (issues.length > 0) return issues;
-  } catch { /* ignore */ }
-
-  // ── Strategy 2: Next-gen parent= JQL ─────────────────────────────────────────
-  try {
-    const issues = await paginateIssues(
-      (s, max) => `/rest/api/3/search?jql=${encodeURIComponent(`parent = ${epicKey} ORDER BY created DESC`)}&fields=${fields}&maxResults=${max}&startAt=${s}`
-    );
-    if (issues.length > 0) return issues;
-  } catch { /* ignore */ }
-
-  // ── Strategy 3: Agile /board/{id}/epic/{epicId}/issue ────────────────────────
-  // This endpoint is specifically designed for this purpose and works across
-  // cross-project epics — child issues from ANY project are returned as long as
-  // they live on that board. Scan all available boards.
+  // ── Strategy 1: Agile /board/{id}/epic/{epicId}/issue ────────────────────────
+  // Specifically designed for this purpose; works across cross-project epics —
+  // child issues from ANY project are returned as long as they live on that board.
   if (epicId) {
     const epicBoardIds = [...new Set([
       // Also try boards for the epic's own project
@@ -584,7 +567,7 @@ export async function fetchIssuesByEpicGlobal(epicKey, epicId = null, fallbackBo
     if (result.length > 0) return result;
   }
 
-  // ── Strategy 4: Full board-scan with local parent/epic-link filter ───────────
+  // ── Strategy 2: Full board-scan with local parent/epic-link filter ───────────
   // Last resort: fetch every issue on every board and filter client-side.
   // Covers cross-project epics where children live on a different project's board.
   // Checks parent.key (next-gen) and any customfield that equals the epic key

@@ -306,12 +306,11 @@ Return ONLY valid raw JSON (no code fences), using each person's exact name as t
 export async function generateAIMilestoneSummary(tickets, milestoneName) {
   if (!tickets || tickets.length === 0) return null;
 
-  try {
-    const totalCount = tickets.length;
-    const isDone = t => { const s = (t.status ?? '').toLowerCase(); return s === 'done' || s === 'closed'; };
-    const isRejected = t => { const s = (t.status ?? '').toLowerCase(); return s === 'rejected' || s === 'declined'; };
-    const isBlocked = t => { const s = (t.status ?? '').toLowerCase(); return s.includes('blocked') || s.includes('impediment'); };
-    const isInProgress = t => { const s = (t.status ?? '').toLowerCase(); return s.includes('progress') || s.includes('review') || s.includes('testing') || s.includes('uat') || s.includes('feedback'); };
+  const totalCount = tickets.length;
+  const isDone = t => { const s = (t.status ?? '').toLowerCase(); return s === 'done' || s === 'closed'; };
+  const isRejected = t => { const s = (t.status ?? '').toLowerCase(); return s === 'rejected' || s === 'declined'; };
+  const isBlocked = t => { const s = (t.status ?? '').toLowerCase(); return s.includes('blocked') || s.includes('impediment'); };
+  const isInProgress = t => { const s = (t.status ?? '').toLowerCase(); return s.includes('progress') || s.includes('review') || s.includes('testing') || s.includes('uat') || s.includes('feedback'); };
 
     const doneCount = tickets.filter(isDone).length;
     const completionPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
@@ -475,36 +474,97 @@ Return ONLY valid raw JSON (no code fences):
   "closingNote": "1 forward-looking sentence calibrated to the riskLevel — directional and confidence-appropriate for executive readers."
 }`;
 
-    const response = await fetch(`${BACKEND_URL}/api/retrospective`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
-    });
+    // Retry up to 3 times with exponential backoff
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15 * 60 * 1000); // 15 minutes
+        let response;
+        try {
+          response = await fetch(`${BACKEND_URL}/api/retrospective`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `Backend error ${response.status}`);
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || `Backend error ${response.status}`);
+        }
+
+        const body = await response.json();
+        const raw = body.retrospective ?? body.result ?? body.content ?? null;
+        if (!raw) throw new Error('Empty response from AI backend');
+
+        // Strip markdown code fences; extract first {...} block if model prepended prose
+        const cleaned = raw.trim()
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```\s*$/, '')
+          .replace(/^[^{]*([\s\S]*\{[\s\S]*\})[\s\S]*$/, '$1');
+
+        let parsed;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch (parseErr) {
+          throw new Error(`JSON parse failed (attempt ${attempt}): ${parseErr.message}`);
+        }
+
+        // Validate required fields — build safe fallbacks rather than dropping the section
+        const riskLevel = ['Green', 'Amber', 'Red'].includes(parsed.riskLevel)
+          ? parsed.riskLevel
+          : completionPct >= 80 ? 'Green' : completionPct >= 50 ? 'Amber' : 'Red';
+
+        const executiveSummary = typeof parsed.executiveSummary === 'string' && parsed.executiveSummary.trim()
+          ? parsed.executiveSummary
+          : `Milestone "${milestoneName}" is ${completionPct}% complete (${doneCount}/${totalCount} tickets, ${doneSP}/${totalSP} SP). Risk level: ${riskLevel}.`;
+
+        const ensureArray = (v) => Array.isArray(v) && v.length > 0 ? v : null;
+
+        console.log(`✅ AI milestone summary generated (attempt ${attempt})`);
+        return {
+          executiveSummary,
+          riskLevel,
+          keyRisks:                 ensureArray(parsed.keyRisks) ?? [],
+          recommendations:          ensureArray(parsed.recommendations) ?? [],
+          teamAnalysis:             parsed.teamAnalysis ?? null,
+          qualityAssessment:        parsed.qualityAssessment ?? null,
+          scopeAndEstimationHealth: parsed.scopeAndEstimationHealth ?? null,
+          closingNote:              parsed.closingNote ?? '',
+        };
+      } catch (err) {
+        lastError = err;
+        console.warn(`⚠️ AI milestone summary attempt ${attempt}/3 failed: ${err.message}`);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, attempt * 1500));
+        }
+      }
     }
 
-    const { retrospective } = await response.json();
-    if (!retrospective) return null;
-
-    const cleaned = retrospective.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-    const parsed = JSON.parse(cleaned);
-    if (!parsed.executiveSummary || !parsed.riskLevel) return null;
-
+    // All retries exhausted — return a data-driven fallback so the section always appears
+    console.error('❌ AI milestone summary failed after 3 attempts:', lastError?.message);
+    const riskLevelFallback = completionPct >= 80 ? 'Green' : completionPct >= 50 ? 'Amber' : 'Red';
     return {
-      executiveSummary: parsed.executiveSummary,
-      riskLevel: parsed.riskLevel,
-      keyRisks: parsed.keyRisks ?? [],
-      recommendations: parsed.recommendations ?? [],
-      teamAnalysis: parsed.teamAnalysis ?? null,
-      qualityAssessment: parsed.qualityAssessment ?? null,
-      scopeAndEstimationHealth: parsed.scopeAndEstimationHealth ?? null,
-      closingNote: parsed.closingNote ?? '',
+      executiveSummary: `Milestone "${milestoneName}" is ${completionPct}% complete with ${doneCount} of ${totalCount} tickets delivered (${doneSP}/${totalSP} SP).${rejectedCount > 0 ? ` ${rejectedCount} ticket${rejectedCount > 1 ? 's' : ''} rejected.` : ''}${blockedCount > 0 ? ` ${blockedCount} ticket${blockedCount > 1 ? 's' : ''} currently blocked.` : ''}`,
+      riskLevel: riskLevelFallback,
+      keyRisks: [
+        ...(blockedCount > 0 ? [`${blockedCount} ticket${blockedCount > 1 ? 's are' : ' is'} blocked and may delay delivery.`] : []),
+        ...(rejectedCount > 0 ? [`${rejectedCount} ticket${rejectedCount > 1 ? 's' : ''} rejected — rework may impact timeline.`] : []),
+        ...(noSpCount > 0 ? [`${noSpCount} ticket${noSpCount > 1 ? 's have' : ' has'} no story point estimate, creating planning risk.`] : []),
+        ...(highPriorityNotDone.length > 0 ? [`${highPriorityNotDone.length} high-priority ticket${highPriorityNotDone.length > 1 ? 's' : ''} not yet completed.`] : []),
+      ],
+      recommendations: [
+        ...(blockedCount > 0 ? ['Escalate blocked tickets immediately to remove impediments.'] : []),
+        ...(noSpCount > 0 ? ['Ensure all open tickets are estimated before the next planning cycle.'] : []),
+        ...(highPriorityNotDone.length > 0 ? ['Prioritise high-priority incomplete items in the next sprint.'] : []),
+      ],
+      teamAnalysis: null,
+      qualityAssessment: null,
+      scopeAndEstimationHealth: null,
+      closingNote: '(AI narrative unavailable — metrics computed directly from Jira data)',
     };
-  } catch (err) {
-    console.error('❌ AI milestone summary generation failed:', err.message);
-    return null;
-  }
 }

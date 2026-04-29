@@ -225,8 +225,22 @@ export async function buildMilestonePage(tickets, milestoneName, deadlineDate, r
     daysInfoPlain = diff > 0 ? `${diff} days remaining` : `${Math.abs(diff)} days overdue`;
   }
 
-  // --- AI executive summary (graceful degradation) ---
-  const aiData = await generateAIMilestoneSummary(tickets, milestoneName).catch(() => null);
+  // --- AI executive summary (always present — retries 3x, falls back to data-driven metrics) ---
+  const aiData = await generateAIMilestoneSummary(tickets, milestoneName).catch((err) => {
+    console.error('AI milestone summary uncaught error:', err?.message);
+    // Ultimate fallback: derive risk from completion %
+    const riskLevelFb = completionPct >= 80 ? 'Green' : completionPct >= 50 ? 'Amber' : 'Red';
+    return {
+      executiveSummary: `Milestone "${milestoneName}" is ${completionPct}% complete (${doneCount}/${totalCount} tickets, ${doneSP}/${totalSP} SP).`,
+      riskLevel: riskLevelFb,
+      keyRisks: [],
+      recommendations: [],
+      teamAnalysis: null,
+      qualityAssessment: null,
+      scopeAndEstimationHealth: null,
+      closingNote: '(AI assessment unavailable)',
+    };
+  });
 
   // ==========================================================================
   // Section 1: Header + TOC
@@ -242,9 +256,9 @@ export async function buildMilestonePage(tickets, milestoneName, deadlineDate, r
   html += `<hr/>`;
 
   // ==========================================================================
-  // Section 2: AI Executive Assessment
+  // Section 2: AI Executive Assessment (always rendered)
   // ==========================================================================
-  if (aiData) {
+  {
     const calloutType = aiData.riskLevel === "Green" ? "tip" : aiData.riskLevel === "Red" ? "warning" : "note";
     const calloutTitle = `AI Executive Assessment — ${aiData.riskLevel === "Green" ? "On Track" : aiData.riskLevel === "Red" ? "Critical" : "At Risk"}`;
 
