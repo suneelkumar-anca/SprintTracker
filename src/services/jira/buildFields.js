@@ -4,7 +4,7 @@ import { getDetectedSpFieldId } from "./storyPointsDetector.js";
 export function buildIssueFields(withDescription = false) {
   const spFields = [...(getDetectedSpFieldId() ? [getDetectedSpFieldId()] : []), ...SP_CANDIDATES];
   const base = [
-    "summary", "status", "assignee", ...spFields, "customfield_10020",
+    "summary", "status", "assignee", ...spFields, "story_points", "story_point_estimate", "customfield_10020",
     "priority", "issuetype", "reporter", "labels", "components",
     "duedate", "created", "updated", "timespent", "aggregatetimespent",
     "parent",

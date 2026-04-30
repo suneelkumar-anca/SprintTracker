@@ -3,6 +3,7 @@ const VIEWS = [
   { id: "tracker",    label: "Tracker",    icon: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
   { id: "dashboard",  label: "Dashboard",  icon: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" },
   { id: "milestones", label: "Milestones", icon: "M9 11l3 3L22 4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" },
+  { id: "projects",   label: "Projects",   icon: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" },
 ];
 
 const THEMES = [

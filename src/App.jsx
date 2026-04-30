@@ -11,6 +11,7 @@ const TrackerView = lazy(() => import("./components/views/TrackerView.jsx"));
 const DashboardView = lazy(() => import("./components/views/DashboardView.jsx"));
 const SavedReportsView = lazy(() => import("./components/views/SavedReportsView.jsx"));
 const MilestonesView = lazy(() => import("./components/views/MilestonesView.jsx"));
+const ProjectsView   = lazy(() => import("./components/views/ProjectsView.jsx"));
 
 export default function App() {
   const state = useAppState();
@@ -22,9 +23,9 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "Inter, sans-serif", color: "var(--text)" }}>
       <AppHeader activeView={activeView} setActiveView={setActiveView} themePref={themePref} setThemePref={setThemePref} configured={configured} savedCount={saved.savedReports.length} />
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: activeView === "milestones" ? 0 : "36px 24px" }}>
-        {!configured && activeView !== "milestones" && <SetupBanner />}
-        {activeView !== "milestones" && <StatsBar totalTickets={sprintTickets.length} doneCount={doneCount} totalSP={totalSP} doneSP={doneSP} currentSprintName={currentSprintName} />}
+      <main style={{ maxWidth: 1100, margin: "0 auto", padding: (activeView === "milestones" || activeView === "projects") ? 0 : "36px 24px" }}>
+        {!configured && activeView !== "milestones" && activeView !== "projects" && <SetupBanner />}
+        {activeView !== "milestones" && activeView !== "projects" && <StatsBar totalTickets={sprintTickets.length} doneCount={doneCount} totalSP={totalSP} doneSP={doneSP} currentSprintName={currentSprintName} />}
         <Suspense fallback={<AppSkeleton />}>
         {activeView === "saved" && (
           <SavedReportsView savedReports={saved.savedReports}
@@ -45,6 +46,9 @@ export default function App() {
         )}
         {activeView === "milestones" && (
           <MilestonesView configured={configured} />
+        )}
+        {activeView === "projects" && (
+          <ProjectsView configured={configured} />
         )}
         </Suspense>
       </main>

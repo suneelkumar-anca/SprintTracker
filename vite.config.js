@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const jiraBase = env.VITE_JIRA_BASE_URL ?? "";
   const confluenceBase = env.VITE_CONFLUENCE_BASE_URL ?? "";
+  const tempoToken = env.VITE_TEMPO_API_TOKEN ?? "";
 
   return {
     plugins: [react()],
@@ -47,6 +48,17 @@ export default defineConfig(({ mode }) => {
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/confluence-api/, ""),
                 secure: true,
+              },
+            }
+          : {}),
+        ...(tempoToken
+          ? {
+              "/tempo-api": {
+                target: "https://api.tempo.io",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/tempo-api/, ""),
+                secure: false,
+                headers: { Authorization: `Bearer ${tempoToken}` },
               },
             }
           : {}),

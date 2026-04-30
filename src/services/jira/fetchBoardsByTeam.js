@@ -1,6 +1,9 @@
 import { jiraGet, paginateIssues } from "./jiraClient.js";
 import { buildIssueFields } from "./buildFields.js";
-import { FIELD_TEAM } from "./jiraConfig.js";
+import { FIELD_TEAM, SP_CANDIDATES } from "./jiraConfig.js";
+import { fetchLeaveAndHolidays } from "./fetchLeaveWorklogs.js";
+import { getDetectedSpFieldId } from "./storyPointsDetector.js";
+import { safeNum } from "./issueFormatters.js";
 
 /**
  * Fetch all boards filtered by project location (team)
@@ -620,4 +623,133 @@ export async function fetchIssuesByEpicGlobal(epicKey, epicId = null, fallbackBo
   }
 
   return result2;
+}
+
+/**
+ * Fetch all child issues of an epic and compute aggregated project stats.
+ * @param {string}   epicKey        - e.g. "ATM-68"
+ * @param {string}   epicId         - numeric Jira id
+ * @param {string[]} boardIds       - all pre-loaded board IDs (for cross-project scan)
+ * @returns {Promise<Object>} stats object
+ */
+export async function fetchEpicChildStats(epicKey, epicId, boardIds = []) {
+  const rawIssues = await fetchIssuesByEpicGlobal(epicKey, epicId, boardIds);
+
+  const isDone = s => { const l = (s ?? "").toLowerCase(); return l === "done" || l === "closed"; };
+  const isRejected = s => { const l = (s ?? "").toLowerCase(); return l === "rejected" || l === "declined"; };
+  const isBlocked = s => { const l = (s ?? "").toLowerCase(); return l.includes("blocked") || l.includes("impediment"); };
+  const isInProgress = s => { const l = (s ?? "").toLowerCase(); return l.includes("progress") || l.includes("review") || l.includes("testing") || l.includes("uat") || l.includes("feedback"); };
+
+  let totalSP = 0, doneSP = 0, totalTimeSeconds = 0;
+  let doneCount = 0, rejectedCount = 0, blockedCount = 0, inProgressCount = 0;
+  let highPriorityNotDoneCount = 0;
+  let startDate = null, endDate = null;
+  const memberMap = {};
+
+  // Debug: log SP-related fields for the first issue
+  if (rawIssues.length > 0) {
+    const _f = rawIssues[0].fields ?? {};
+    const _spDebug = {};
+    for (const [k, v] of Object.entries(_f)) {
+      if (k.startsWith("customfield_") && v != null) _spDebug[k] = v;
+    }
+    if (_f.story_points != null) _spDebug.story_points = _f.story_points;
+    if (_f.story_point_estimate != null) _spDebug.story_point_estimate = _f.story_point_estimate;
+    console.log("[SP Debug]", rawIssues[0].key, "custom fields with values:", _spDebug);
+    if (rawIssues[0].estimation) console.log("[SP Debug] estimation:", rawIssues[0].estimation);
+  }
+
+  for (const issue of rawIssues) {
+    const f = issue.fields ?? {};
+    const status = f.status?.name ?? "";
+    const spFieldList = [...(getDetectedSpFieldId() ? [getDetectedSpFieldId()] : []), ...SP_CANDIDATES];
+    let sp = 0;
+    for (const fId of spFieldList) {
+      const v = safeNum(f[fId]);
+      if (v !== null) { sp = v; break; }
+    }
+    // Fallback: check Agile API estimation property
+    if (sp === 0 && issue.estimation?.value != null) {
+      sp = Number(issue.estimation.value) || 0;
+    }
+    // Fallback: check story_points / story_point_estimate (next-gen boards)
+    if (sp === 0) {
+      const alt = safeNum(f.story_points) ?? safeNum(f.story_point_estimate);
+      if (alt != null && alt > 0) sp = alt;
+    }
+    const timeSpent = Number(f.aggregatetimespent ?? f.timespent ?? 0) || 0;
+    const priority = f.priority?.name ?? "";
+    const assignee = f.assignee?.displayName ?? "Unassigned";
+    const avatarUrl = f.assignee?.avatarUrls?.["48x48"] ?? null;
+
+    totalSP += sp;
+    totalTimeSeconds += timeSpent;
+    if (isDone(status)) { doneCount++; doneSP += sp; }
+    if (isRejected(status)) rejectedCount++;
+    if (isBlocked(status)) blockedCount++;
+    if (isInProgress(status)) inProgressCount++;
+    if (!isDone(status) && (priority === "High" || priority === "Highest")) highPriorityNotDoneCount++;
+
+    // Date tracking
+    const created = (f.created ?? "").slice(0, 10);
+    const due = (f.duedate ?? "").slice(0, 10);
+    const updated = (f.updated ?? "").slice(0, 10);
+    const issueEnd = due || updated;
+    if (created) { if (!startDate || created < startDate) startDate = created; }
+    if (issueEnd) { if (!endDate || issueEnd > endDate) endDate = issueEnd; }
+
+    // Team member aggregation
+    const accountId = f.assignee?.accountId ?? null;
+    if (!memberMap[assignee]) memberMap[assignee] = { name: assignee, avatarUrl, accountId, total: 0, done: 0, timeSeconds: 0 };
+    if (!memberMap[assignee].accountId && accountId) memberMap[assignee].accountId = accountId;
+    memberMap[assignee].total++;
+    if (isDone(status)) memberMap[assignee].done++;
+    memberMap[assignee].timeSeconds += timeSpent;
+  }
+
+  const teamMembers = Object.values(memberMap).sort((a, b) => b.total - a.total);
+
+  // Blocked/high-priority risk details (up to 10 each)
+  const blockedTickets = rawIssues
+    .filter(i => isBlocked(i.fields?.status?.name ?? ""))
+    .slice(0, 10)
+    .map(i => ({ key: i.key, summary: (i.fields?.summary ?? "").slice(0, 80), assignee: i.fields?.assignee?.displayName ?? "Unassigned" }));
+
+  const highPriorityNotDone = rawIssues
+    .filter(i => !isDone(i.fields?.status?.name ?? "") && ["High", "Highest"].includes(i.fields?.priority?.name ?? ""))
+    .slice(0, 10)
+    .map(i => ({ key: i.key, summary: (i.fields?.summary ?? "").slice(0, 80), status: i.fields?.status?.name ?? "", priority: i.fields?.priority?.name ?? "" }));
+
+  // Fetch leave days for this project's team members from Tempo/Jira leave issues.
+  // Uses standard Jira Worklog API (no Tempo API key required) filtered by date range
+  // and team member names from the epic's child issues.
+  // Build accountId → displayName map for Tempo API (which only returns accountId)
+  const accountMap = {};
+  for (const m of teamMembers) {
+    if (m.accountId) accountMap[m.accountId] = m.name;
+  }
+  const memberNames = teamMembers.map(m => m.name);
+  let leaveData = { leaveDays: 0, publicHolidays: 0, totalLeaveDays: 0, perPerson: {} };
+  try {
+    leaveData = await fetchLeaveAndHolidays(memberNames, startDate, endDate, teamMembers.length, accountMap);
+  } catch { /* non-fatal — UI shows 0 if leave fetch fails */ }
+
+  return {
+    rawIssues,
+    totalCount: rawIssues.length,
+    doneCount,
+    rejectedCount,
+    blockedCount,
+    inProgressCount,
+    highPriorityNotDoneCount,
+    totalSP,
+    doneSP,
+    totalTimeSeconds,
+    startDate,
+    endDate,
+    teamMembers,
+    blockedTickets,
+    highPriorityNotDone,
+    leaveData,
+  };
 }

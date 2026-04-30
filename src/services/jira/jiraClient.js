@@ -7,18 +7,25 @@ export function authHeader() {
   };
 }
 
-export async function jiraGet(path) {
-  const res = await fetch(`${BASE}${path}`, { headers: authHeader() });
-  if (!res.ok) {
-    // For 410 Gone errors, return a special marker object instead of throwing
-    // This allows pagination to handle end-of-results gracefully without console errors
-    if (res.status === 410) {
-      return { __isGone: true };
+export async function jiraGet(path, { retries = 2 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${BASE}${path}`, { headers: authHeader() });
+      if (!res.ok) {
+        if (res.status === 410) return { __isGone: true };
+        const text = await res.text().catch(() => "");
+        throw new Error(`Jira ${res.status}: ${text || res.statusText}`);
+      }
+      return res.json();
+    } catch (err) {
+      const isTransient = /ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|network/i.test(err.message);
+      if (isTransient && attempt < retries) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
     }
-    const text = await res.text().catch(() => "");
-    throw new Error(`Jira ${res.status}: ${text || res.statusText}`);
   }
-  return res.json();
 }
 
 export async function paginateAgile(buildUrl, pageSize = 50) {
